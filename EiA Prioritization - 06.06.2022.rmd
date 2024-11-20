@@ -130,6 +130,8 @@ spam_global_file<-"Data/SPAM/global_crop_vop15_int15.tif"
 spam_ssa_file_rs<-gsub(".tif$","_rs.tif",spam_ssa_file)
 spam_global_file_rs<-gsub(".tif$","_rs.tif",spam_global_file)
 
+haz_vop_file<-"Data/hazard_vop_admin.parquet"
+
 if(!file.exists(spam_ssa_file_rs)){
   Cropland<-terra::rast("Data/Global_cropland_3km_2019.tif")
   
@@ -156,8 +158,10 @@ if(!file.exists(spam_ssa_file_rs)){
   terra::writeRaster(spam_global,filename=spam_global_file_rs,overwrite=T)
 
 }else{
+  if(!file.exists(haz_vop_file)){
   spam_africa<-terra::rast(spam_ssa_file_rs)
   spam_global<-terra::rast(spam_global_file_rs)
+  }
 }
 
 # Run R/SPAMbyRegion.R to generate the file below
@@ -166,9 +170,8 @@ SPAMbyRegion<-data.table::fread(file="Data/SPAMextracted.csv")[Country=="",Count
 ```
 
 ```{r extract hazard x vop by admin area ,echo=F}
-FileName<-"Data/hazard_vop_admin.parquet"
 
-if(!file.exists(FileName)){
+if(!file.exists(haz_vop_file)){
   RegxCrop<-rbindlist(lapply(strsplit(SPAMbyRegion$Label,"-"),FUN=function(X){data.table(Region=X[1],Country=X[2],Crop=X[3],Rank=X[4])}))
   areas<-unique(RegxCrop[,.(Region,Country)])
   
@@ -217,20 +220,28 @@ if(!file.exists(FileName)){
   Data[,VoP_total_crop:=sum(VoP,na.rm=T),by=.(Region,Country,Crop)
        ][,VoP_total:=sum(VoP,na.rm=T),by=.(Region,Country)
          ][,VoP_perc_total:=round(100*VoP/VoP_total,2)
-           ][,Label:=paste0(Region,"-",Country,"-",Crop,"-",Rank)]
+           ][,Label:=paste0(Region,"-",Country,"-",Crop,"-",Rank)
+             ][,VoP:=round(VoP,0)
+               ][,VoP_total_crop:=round(VoP_total_crop,0)
+                 ][,VoP_perc_total:=round(VoP_perc_total,0)]
+  
   
   Data[is.na(Hazard),Hazard:="No hazard"]
+  
+  # Remove rows with zero value
+  Data<-Data[VoP>0]
+  # Add back label
+  Data[,Label:=paste0(Region,"-",Country,"-",Crop,"-",Rank)][,Admin:=Country][Admin=="",Admin:=Region]
 
-  arrow::write_parquet(Data,FileName)
+  arrow::write_parquet(Data,haz_vop_file)
   
 }else{
-  Data<-data.table(arrow::read_parquet(FileName))
+  Data<-data.table(arrow::read_parquet(haz_vop_file))
 }
 
-# Remove rows with zero value
-Data<-Data[VoP>0]
-# Add back label
-Data[,Label:=paste0(Region,"-",Country,"-",Crop,"-",Rank)][,Admin:=Country][Admin=="",Admin:=Region]
+# Add rank for plot 2
+rank2<-unique(Data[order(VoP_total_crop,decreasing = T),.(VoP_total_crop,Region,Country,Crop)])[,Rank2:=1:.N]
+Data<-merge(Data,rank2,by=c("Region","Crop","Country","VoP_total_crop"),all.x=T,sort=F)
 
 # Set an mimimum VoP to consider
 MinVoP<-10000 # $I 2015
@@ -330,12 +341,22 @@ renderUI({
 Select the number of crops for each region to show, the top n 
 ```{r Choose N Crops, echo=F}
 numericInput(inputId="Crop.N",
-             label="Number of crops to show",
+             label="No. of crops to show (plot1 - per country)",
              value=5,
-             min=0,
+             min=1,
              max=SPAMbyRegion[,list(N=length(unique(Crop))),by=Region][,max(N)],
              step=1,
-             width="200px")
+             width="300px")
+```
+
+```{r Choose N Crops 2, echo=F}
+numericInput(inputId="Crop.N2",
+             label="No. of crops to show (plot2 - total)",
+             value=20,
+             min=1,
+             max=50,
+             step=1,
+             width="300px")
 ```
 
 Crops are present by region, the numbers refer to the regional rank of the crop in terms of the sum of the MapSPAM variable chosen for that crop (in this case value of production in 2015 international dollars I$).
@@ -373,8 +394,19 @@ numericInput(inputId="Scaler",
 :::{}
 ```{r Number of Rows, echo=F}
 numericInput(inputId="NRows",
-             label="No. waffle cols",
+             label="Waffle cols-plot1",
              value=15,
+             min=1,
+             max=30,
+             step=1,
+             width="120px")
+```
+:::
+:::{}
+```{r Number of Rows2, echo=F}
+numericInput(inputId="NRows2",
+             label="Waffle cols-plot2",
+             value=2,
              min=1,
              max=30,
              step=1,
@@ -483,6 +515,16 @@ numericInput(inputId="GridCols",
 
 :::: {style="display: flex;"}
 ::: {}
+```{r Choose Plot,echo=F}
+  selectInput(inputId="plot_choice", 
+              label="Choose plot",
+              choices = c("plot1","plot2"),
+              selected="plot1", 
+              multiple = F, 
+              width="120px")
+```
+:::
+:::{}
 ```{r Choose Palette,echo=F}
   selectInput(inputId="Palette", 
               label="Palette",
@@ -528,7 +570,7 @@ numericInput(inputId="Plot.Height",
              value=0.3,
              min=0.1,
              max=3,
-             step=0.1, 
+             step=0.05, 
              width="200px")
 ```
 :::
@@ -546,33 +588,42 @@ numericInput(inputId="Plot.Width",
 ::::
 
 ```{r subset data & adjust units, echo=F}
-dff<-reactive({
-   Data[Label %in% input$Crops.Lab
-        ][,VoP:=round(VoP,0)][,Unit:=paste("2015",input$Units)]
-})
-
 square_val<-reactive({
-  dat<-copy(dff())
+  dat<-Data[Label %in% input$Crops.Lab]
   max_vop<-10^(nchar(dat[,max(VoP)])-2)
   dat[,VoP:=VoP/max_vop]
-  #data[,VoP:=round(Scaler*VoP/max_vop,0)]
   scale_factor<-dat[,max(VoP,na.rm = T)/input$Scaler]
-  
   round(scale_factor*max_vop/10^6,1)
 })
-  
+
+square_val2<-reactive({
+    if(is.null(input$Countries)){
+    dat<-Data[Region %in% input$Regions & Country==""]
+  }else{
+    dat<-Data[Country %in% input$Countries]
+  }
+  dat<-Data[Rank2<=input$Crop.N2]
+  max_vop<-10^(nchar(dat[,max(VoP)])-2)
+  dat[,VoP:=VoP/max_vop]
+  scale_factor<-dat[,max(VoP,na.rm = T)/input$Scaler]
+  round(scale_factor*max_vop/10^6,1)
+})
 
 ```
 
-One square = `r reactive(square_val())` million I$ 2015.
+Plot 1: Waffle grid unit = `r reactive(square_val())` million IntD 2015. Plot 2: Waffle grid unit = `r reactive(square_val2())` million IntD 2015.
 
 ```{r create plot function, echo=F}
 #https://rud.is/rpubs/building-waffle-charts.html 
 
 Waffler<-function(data,
+                  Crops.Lab,
+                  Crop.N2,
+                  Regions,
+                  Countries,
                   Scaler,
-                  unit_lab,
                   NRows,
+                  NRows2,
                   FacetRows,
                   TextSize,
                   HazardPalette,
@@ -595,34 +646,82 @@ Waffler<-function(data,
     data<-data[Hazard!="No hazard"]
   }
   
-  max_vop<-10^(nchar(data[,max(VoP)])-2)
-  data[,VoP:=VoP/max_vop]
-  scale_factor<-data[,max(VoP,na.rm = T)/Scaler]
-  data[,VoP:=round(VoP/scale_factor,0)]
-  
-  data[,Hazard:=factor(Hazard,levels=sort(unique(Hazard)))]
-  
-  if(RmNoHaz=="No"){
+   if(RmNoHaz=="No"){
     HazardPalette[names(HazardPalette)=="No Hazard"]<-NoHazardCol
   }
   
-  MaxY<-data[,list(Height=ceiling(sum(VoP)/NRows)),by=.(Region,Country,Crop)][,max(Height)]+1
+  # Create combined names
+  data[, Combined := paste0(Admin, ":", Crop)]
+  data[, Combined := factor(Combined, levels = data[, .(Total = sum(VoP)), by = Combined][order(-Total), Combined])]
   
+  # Factorize hazard
+  data[,Hazard:=factor(Hazard,levels=sort(unique(Hazard)))]
+
+  # Data for plot 1
+  data1<-data[Label %in% Crops.Lab]
+  max_vop<-10^(nchar(data1[,max(VoP)])-2)
+  data1[,VoP:=VoP/max_vop]
+  scale_factor<-data1[,max(VoP,na.rm = T)/Scaler]
+  data1[,VoP:=round(VoP/scale_factor,0)]
+  MaxY<-data1[,list(Height=ceiling(sum(VoP)/NRows)),by=.(Region,Country,Crop)][,max(Height)]+1
+
+  # Data for plot 2
+  if(is.null(Countries)){
+    data2<-data[Region %in% Regions & Country==""]
+  }else{
+    data2<-data[Country %in% Countries]
+  }
+  data2<-data2[Rank2<=Crop.N2]
+  max_vop<-10^(nchar(data2[,max(VoP)])-2)
+  data2[,VoP:=VoP/max_vop]
+  scale_factor<-data2[,max(VoP,na.rm = T)/Scaler]
+  data2[,VoP:=round(VoP/scale_factor,0)]
+
+  # Plot 2
+gg_theme <- theme(
+  text = element_text(size = TextSize),
+  plot.margin = margin(0, 0, 0, 0, unit = "cm"), # Remove plot margin
+  panel.spacing = unit(0, "lines"), # No space between panels
+  axis.ticks = element_blank(),
+  axis.line = element_blank(),
+  panel.background = element_rect(fill = Background),
+  strip.background = element_blank(),
+  strip.text.y.left = element_text(
+    angle = 0,                # Horizontal strip labels
+    hjust = 1,                # Align strip labels horizontally
+    vjust = 0.5,              # Center vertically
+    margin = margin(r = 0, l = 0, unit = "pt") # Remove strip margins
+  ),
+  axis.text = element_blank(),
+  axis.title = element_blank(),
+  panel.grid = element_blank()
+)
+
+  g <- ggplot(data2, aes(fill = Hazard, values = VoP)) +
+  waffle::geom_waffle(n_rows = NRows2, size = GridSpace, colour = GridCol, flip = FALSE) +
+  scale_fill_manual(values = HazardPalette, drop = FALSE) +
+  scale_x_continuous(expand = c(0.005,0))+
+  scale_y_continuous(expand = c(0.02,0.02))+
+  facet_grid(Combined ~ ., switch = "y") + # Use facet_grid with switched strips
+  gg_theme
+
+  # Plot 1
   gg_theme<-theme(text=element_text(size=TextSize),
           panel.spacing = unit(PanelSpace,"lines"),
           axis.ticks = element_blank(),
           axis.line = element_blank(),
           panel.background = element_rect(fill=Background),
           strip.background = element_blank(),
+          strip.text = element_text(margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")),
           plot.margin = margin(0, 0, 0, 0, unit = "cm"), 
           axis.text = element_blank(),
           axis.title = element_blank(),
           panel.grid = element_blank()
           )
   
-  Plots<-lapply(data[,sort(unique(Admin))],FUN=function(REG){
+  Plots<-lapply(data1[,sort(unique(Admin))],FUN=function(REG){
     
-    Plot.Dat<-data[Admin==REG]
+    Plot.Dat<-data1[Admin==REG]
     
     Plot.Dat[,Crop:=factor(Crop,levels = unique(Plot.Dat[,.(Crop,Rank)])[order(as.numeric(Rank)),Crop])]
   
@@ -631,9 +730,6 @@ Waffler<-function(data,
     coord_equal() +
     labs(fill = NULL, colour = NULL) +
     waffle::geom_waffle(n_rows = NRows, size = GridSpace, colour = GridCol, flip = TRUE)+
-    labs(title = REG,
-      x = "Crop",
-      y = unit_lab)+
     gg_theme+
     scale_fill_manual(values=HazardPalette,drop=F)+
     facet_wrap(~Crop, nrow = FacetRows, strip.position = "bottom")+
@@ -645,17 +741,21 @@ Waffler<-function(data,
   
   names(Plots)<-data[,unique(Region)]
 
-  return(Plots)
+  return(list(Plot1=Plots,Plot2=g))
 }
 
 ```
 
 ```{r create plots,echo=F}
 PlotData<-reactive({
-  Waffler(data=data.table::copy(dff()),
+  Waffler(data=copy(Data),
+          Crops.Lab=input$Crops.Lab,
+          Crop.N2=input$Crop.N2,
+          Regions=input$Regions,
+          Countries=input$Countries,
           Scaler=input$Scaler,
-          unit_lab="I$ 2015",
           NRows=input$NRows,
+          NRows2=input$NRows2,
           FacetRows=input$FacetRows,
           TextSize=input$TextSize,
           HazardPalette=HazardPalette(),
@@ -673,7 +773,11 @@ PlotData<-reactive({
 
 ```{r Plot Size Adjust Functions , echo=F}
 Plot.Height <- function(){
-  input$Plot.Height*400*length(PlotData())
+  x<-  input$Plot.Height*400*length(PlotData()$Plot1)
+  if(input$plot_choice=="plot2"){
+  x<-x*2
+  }
+  return(x)
 }
 
 Plot.Width <- function(){
@@ -683,12 +787,16 @@ Plot.Width <- function(){
 
 ```{r Plot waffles,echo=F}
 renderPlot({
-  ggpubr::ggarrange(plotlist=PlotData(), 
+  if(input$plot_choice=="plot1"){
+  ggpubr::ggarrange(plotlist=PlotData()$Plot1, 
                     ncol=input$GridCols,
                     nrow=input$GridRows, 
                     common.legend = TRUE, 
                     legend=input$LegPos)
-  },height=Plot.Height,width=Plot.Width)
+  }else{
+     PlotData()$Plot2
+  }
+  },height= Plot.Height,width=Plot.Width)
 ```
 
 
@@ -769,19 +877,8 @@ reactive({
 #### Data used the waffle plot:
 ```{r Show Data,echo=F}
 renderDT({
-  datatable(dff(),
+  datatable(Data[,!c("Admin","Label","Rank","Rank2")][,Unit:=paste("2015",input$Units)],
             caption="Plot data by crop x region x hazard",
-            extensions = 'Buttons',
-            filter = "top",
-            options = list(dom = 'Blfrtip',
-                           buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-                           lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
-  
-})
-
-renderDT({
-  datatable(dff()[,.(Crop,Region)],
-            caption="Plot data by crop x region",
             extensions = 'Buttons',
             filter = "top",
             options = list(dom = 'Blfrtip',
