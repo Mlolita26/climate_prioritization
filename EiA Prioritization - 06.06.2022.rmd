@@ -339,6 +339,8 @@ renderUI({
 ```
 
 Select the number of crops for each region to show, the top n 
+:::: {style="display: flex;"}
+::: {}
 ```{r Choose N Crops, echo=F}
 numericInput(inputId="Crop.N",
              label="No. of crops to show (plot1 - per country)",
@@ -348,7 +350,8 @@ numericInput(inputId="Crop.N",
              step=1,
              width="300px")
 ```
-
+:::
+:::{}
 ```{r Choose N Crops 2, echo=F}
 numericInput(inputId="Crop.N2",
              label="No. of crops to show (plot2 - total)",
@@ -358,6 +361,8 @@ numericInput(inputId="Crop.N2",
              step=1,
              width="300px")
 ```
+:::
+::::
 
 Crops are present by region, the numbers refer to the regional rank of the crop in terms of the sum of the MapSPAM variable chosen for that crop (in this case value of production in 2015 international dollars I$).
 ```{r choose crops,echo=F}
@@ -602,8 +607,11 @@ square_val2<-reactive({
   }else{
     dat<-Data[Country %in% input$Countries]
   }
-  ranks<-dat[,sort(unique(Rank2))][1:input$Crop.N2]
-  dat<-dat[Rank2 %in% ranks]
+  ranks<-dat[,sort(unique(Rank2))]
+  if(length(ranks)>input$Crop.N2){
+  ranks<-ranks[1:input$Crop.N2]
+    dat<-dat[Rank2 %in% ranks]
+  } 
   max_vop<-10^(nchar(dat[,max(VoP)])-2)
   dat[,VoP:=VoP/max_vop]
   scale_factor<-dat[,max(VoP,na.rm = T)/input$Scaler]
@@ -665,19 +673,24 @@ Waffler<-function(data,
   scale_factor<-data1[,max(VoP,na.rm = T)/Scaler]
   data1[,VoP:=round(VoP/scale_factor,0)]
   MaxY<-data1[,list(Height=ceiling(sum(VoP)/NRows)),by=.(Region,Country,Crop)][,max(Height)]+1
-
+  data1<-data1[VoP>0]
+  
   # Data for plot 2
   if(is.null(Countries)){
     data2<-data[Region %in% Regions & Country==""]
   }else{
     data2<-data[Country %in% Countries]
   }
-  ranks<-data2[,sort(unique(Rank2))][1:Crop.N2]
+  ranks<-data2[,sort(unique(Rank2))]
+  if(length(ranks)>Crop.N2){
+  ranks<-ranks[1:Crop.N2]
   data2<-data2[Rank2 %in% ranks]
+  }
   max_vop<-10^(nchar(data2[,max(VoP)])-2)
   data2[,VoP:=VoP/max_vop]
   scale_factor<-data2[,max(VoP,na.rm = T)/Scaler]
   data2[,VoP:=round(VoP/scale_factor,0)]
+  data2<-data2[VoP>0]
 
   # Plot 2
 gg_theme <- theme(
@@ -721,7 +734,8 @@ gg_theme <- theme(
           panel.grid = element_blank()
           )
   
-  Plots<-lapply(data1[,sort(unique(Admin))],FUN=function(REG){
+  admin<-data1[,sort(unique(Admin))]
+  Plots<-lapply(admin,FUN=function(REG){
     
     Plot.Dat<-data1[Admin==REG]
     
@@ -741,7 +755,7 @@ gg_theme <- theme(
 
   })
   
-  names(Plots)<-data[,unique(Region)]
+  names(Plots)<-admin
 
   return(list(Plot1=Plots,Plot2=g))
 }
@@ -777,7 +791,7 @@ PlotData<-reactive({
 Plot.Height <- function(){
   x<-  input$Plot.Height*400*length(PlotData()$Plot1)
   if(input$plot_choice=="plot2"){
-  x<-x*2
+  x<- input$Plot.Height*(50+input$Crop.N2*100)
   }
   return(x)
 }
