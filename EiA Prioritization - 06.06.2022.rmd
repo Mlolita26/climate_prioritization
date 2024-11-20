@@ -602,7 +602,7 @@ square_val2<-reactive({
   }else{
     dat<-Data[Country %in% input$Countries]
   }
-  ranks<-dat[,sort(unique(Rank))][1:input$Crop.N2]
+  ranks<-dat[,sort(unique(Rank2))][1:input$Crop.N2]
   dat<-dat[Rank2 %in% ranks]
   max_vop<-10^(nchar(dat[,max(VoP)])-2)
   dat[,VoP:=VoP/max_vop]
@@ -672,7 +672,7 @@ Waffler<-function(data,
   }else{
     data2<-data[Country %in% Countries]
   }
-  ranks<-data2[,sort(unique(Rank))][1:Crop.N2]
+  ranks<-data2[,sort(unique(Rank2))][1:Crop.N2]
   data2<-data2[Rank2 %in% ranks]
   max_vop<-10^(nchar(data2[,max(VoP)])-2)
   data2[,VoP:=VoP/max_vop]
