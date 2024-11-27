@@ -36,7 +36,7 @@ required.packages <- c("arrow",
                        "MetBrewer",
                        "reshape",
                        "shiny",
-                       "tidyverse",
+                    #   "tidyverse",
                        "viridis",
                        "wesanderson")
 
@@ -83,7 +83,7 @@ return(PAL)
 ```{r load mapspam, echo =F}
 haz_vop_file<-"Data/hazard_vop_admin.parquet"
 
-Data<-data.table(arrow::read_parquet(haz_vop_file))[,Rank:=NULL]
+Data<-data.table(arrow::read_parquet(haz_vop_file))
 
 # Set an mimimum VoP to consider
 #MinVoP<-10000 # $I 2015
@@ -160,26 +160,6 @@ numericInput(inputId="Crop.N3",
 ```
 :::
 ::::
-
-Crops are present by region, the numbers refer to the regional rank of the crop in terms of the sum of the MapSPAM variable chosen for that crop (in this case value of production in 2015 international dollars I$).
-```{r choose crops,echo=F,eval=FALSE}
-renderUI({
-  if(is.null(input$Countries)){
-  checkboxGroupInput(inputId="Crops.Lab", 
-                     label="Remove crop x region combinations",
-                     choices = SPAMbyRegion[Region %in% input$Regions & Rank<=input$Crop.N & is.na(Country),Label],
-                     selected = SPAMbyRegion[Region %in% input$Regions & Rank<=input$Crop.N & is.na(Country),Label],
-                     inline=T)
-  }else{
-     checkboxGroupInput(inputId="Crops.Lab", 
-                     label="Remove crop x country combinations",
-                     choices = SPAMbyRegion[Region %in% input$Regions & Country %in% input$Countries & Rank<=input$Crop.N,Label],
-                     selected = SPAMbyRegion[Region %in% input$Regions & Country %in% input$Countries & Rank<=input$Crop.N,Label],
-                     inline=T) 
-  }
-})
-
-```
 
 ```{r choose crops 2,echo=F}
 crop_options<-reactive({
@@ -464,7 +444,7 @@ numericInput(inputId="Plot.Width",
 ```{r calculate units, echo=F}
 dat<-reactive({
     if(is.null(input$Countries)){
-    dat<-Data[Region %in% input$Regions & Country=="" & Crop %in% input$crops]
+    dat<-Data[Region %in% input$Regions & (Country==""|is.na(Country)) & Crop %in% input$crops]
   }else{
     dat<-Data[Country %in% input$Countries & Crop %in% input$crops]
   }
