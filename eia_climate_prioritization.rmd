@@ -29,6 +29,7 @@ if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependen
 required.packages <- c("arrow",
                        "colourpicker",
                        "data.table",
+                       "DT",
                        "dplyr",
                        "ggplot2",
                        "ggpubr",
@@ -100,7 +101,7 @@ if(!dir.exists(PlotDir)){
 ### WafflePlot
 ```{r choose region, echo=F}
  cg_regions<- Data[,sort(unique(Region))]
- cg_regions_selected<-cg_regions[!cg_regions %in% c("Africa","Asia","Latin America")]
+ cg_regions_selected<-cg_regions[cg_regions %in% c("Africa","LAC","SA","SEA")]
 
   checkboxGroupInput(inputId="Regions", 
                      label="Select regions",
@@ -128,7 +129,7 @@ Select the number of crops for each region to show, the top n
 ::: {}
 ```{r Choose N Crops, echo=F}
 numericInput(inputId="Crop.N1",
-             label="No. of crops to show (plot1 - per admin)",
+             label="No. of crops to show (plot1)",
              value=5,
              min=1,
              max=Data[,list(N=length(unique(Crop))),by=Region][,max(N)],
@@ -139,10 +140,21 @@ numericInput(inputId="Crop.N1",
 :::{}
 ```{r Choose N Crops 2, echo=F}
 numericInput(inputId="Crop.N2",
-             label="No. of crops to show (plot2 - total)",
+             label="No. of crops to show (plot2)",
              value=20,
              min=1,
              max=50,
+             step=1,
+             width="300px")
+```
+:::
+:::{}
+```{r Choose N Crops 3, echo=F}
+numericInput(inputId="Crop.N3",
+             label="No. of crops to show (plot3)",
+             value=Data[,length(unique(Crop))],
+             min=1,
+             max=Data[,length(unique(Crop))],
              step=1,
              width="300px")
 ```
@@ -376,7 +388,7 @@ numericInput(inputId="GridCols",
   selectInput(inputId="plot_choice", 
               label="Choose plot",
               choices = c("plot1","plot2","plot3"),
-              selected="plot2", 
+              selected="plot3", 
               multiple = F, 
               width="120px")
 ```
@@ -504,6 +516,7 @@ Waffler<-function(data,
                   Crops,
                   Crop.N1,
                   Crop.N2,
+                  Crop.N3,
                   Regions,
                   Countries,
                   Scaler,
@@ -618,7 +631,7 @@ Waffler<-function(data,
   text = element_text(size = TextSize),
   plot.margin = margin(0, 0, 0, 0, unit = "cm"), # Remove plot margin
   panel.spacing = unit(0, "pt"), # No space between panels
-  legend.position.inside =  c(0.8, 0.2),
+  legend.position =  LegPos,
   panel.background = element_rect(fill = Background),
   strip.background = element_blank(),
   strip.text.y.left = element_text(
@@ -631,13 +644,18 @@ Waffler<-function(data,
   panel.grid.major.y = element_blank()
   )
   
+  crop_order<-data3[,.(VoP=sum(VoP,na.rm=T)),by=Crop][order(VoP,decreasing = T),Crop]
+
   if(p3_order_val=="Yes"){
-    crop_order<-data3[,.(VoP=sum(VoP,na.rm=T)),by=Crop][order(VoP,decreasing = T),Crop]
     data3$Crop <- factor(data3$Crop, levels = rev(crop_order))
   }else{
     data3$Crop <- factor(data3$Crop, levels = rev(unique(data3$Crop)))
   }
-
+  
+  if(Crop.N3<length(crop_order)){
+  p3_crops<-crop_order[1:Crop.N3]
+  data3<-data3[Crop %in% p3_crops]
+  }
   
   g3 <- ggplot(data3, aes(x = Crop, y = VoP, fill = Hazard)) +
   geom_bar(stat = "identity", position =  position_stack(reverse = F), color = GridCol,width=1) +
@@ -727,6 +745,7 @@ PlotData<-reactive({
           Crops=input$crops,
           Crop.N1=input$Crop.N1,
           Crop.N2=input$Crop.N2,
+          Crop.N3=input$Crop.N3,
           Regions=input$Regions,
           Countries=input$Countries,
           Scaler=input$Scaler,
@@ -866,7 +885,7 @@ reactive({
 #### Data used the waffle plot:
 ```{r Show Data,echo=F}
 renderDT({
-  datatable(Data[,!c("Admin","Label","Rank","Rank2")][,Unit:=paste("2015",input$Units)],
+  datatable(Data[,!c("Admin","Label","Rank","Rank2")][,Unit:=paste("I$ 2015")],
             caption="Plot data by crop x region x hazard",
             extensions = 'Buttons',
             filter = "top",
