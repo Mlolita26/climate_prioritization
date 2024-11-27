@@ -9,8 +9,8 @@ if(!require("exactextractr")){
 
 # 1) Prepare Boundaries ####
 cgiar_countries <- terra::vect('raw_data/CGIAR_countries_simplified.geojson')
-region_file<-"Data/regions.geojson"
-country_file<-"Data/countries.geojson"
+region_file<-"raw_data/regions.geojson"
+country_file<-"raw_data/countries.geojson"
 
 # Remove high income countries from regions
 # Retrieve country information
@@ -47,15 +47,18 @@ cgiar_countries$region <- region_info$region
 terra::writeVector(cgiar_regions,region_file,overwrite=T)
 terra::writeVector(cgiar_countries,country_file,overwrite=T)
 
-# Load mapspam data
-spam_africa<-terra::rast("raw_data/SPAM/ssa_crop_vop15_intd15.tif")
-spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
+# 2) Extract VoP ####
+for(tech in c("r","i")){
+## Load mapspam data #####
+spam_africa<-terra::rast(paste0("raw_data/SPAM/ssa_crop_vop15_intd15_",tech,".tif"))
+spam_global<-terra::rast(paste0("raw_data/SPAM/global_crop_vop15_int15_",tech,".tif"))
+# read in mapspam metadata
+ms_codes<-data.table::fread("https://raw.githubusercontent.com/AdaptationAtlas/hazards_prototype/main/metadata/SpamCodes.csv", showProgress = FALSE)[,Code:=toupper(Code)]
+ms_codes<-ms_codes[compound=="no"]
+names(spam_global)<-ms_codes[match(names(spam_global),Code),Fullname]
 
-# 2) PrepareCGIAR regions ####
-
-# 3) Extract VoP
-  ## Regions
-    ### NOT SSA #####
+  ## Regions #####
+    ### NOT SSA ######
   Regions<-cgiar_regions[!cgiar_regions$CG_REG %in% c("ESA","WCA","Africa"),]
   SPAMbyRegion<-data.table(exactextractr::exact_extract(spam_global,sf::st_as_sf(Regions),fun="sum",append_cols=c("CG_REG")))
   setnames(SPAMbyRegion,"CG_REG","Region")
@@ -110,30 +113,37 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
   
   data$ssa_countries<-SPAMbyRegion
   
-  data_merge<-rbindlist(data,fill=T)[,version:=2020]
+  ## Save results ####
+  SPAMbyRegion<-rbindlist(data,fill=T)[,version:=2020]
+  fwrite(SPAMbyRegion,file=file.path("raw_data/SPAM",paste0("SPAMextracted_",tech,".csv")))
+  }
+
+# 3) Prepare Hazards Data ####
+  hazard_layers<-data.table(file=c('raw_data/haz_comb/combi_haz_table_cg.tif',
+                                   'raw_data/haz_comb/haz_agg_rf.tif',"raw_data/haz_comb/haz_full_rf.tif",
+                                   'raw_data/haz_comb/haz_agg_ir.tif',"raw_data/haz_comb/haz_full_ir.tif"),
+                            legend=c("raw_data/haz_comb/combi_haz_table_cg.csv",
+                                     'raw_data/haz_comb/haz_agg_rf.csv','raw_data/haz_comb/haz_full_rf.csv',
+                                     'raw_data/haz_comb/haz_agg_ir.csv','raw_data/haz_comb/haz_full_ir.csv'))
+  hazard_layers[,file_n:=1:.N][,irrigated:=c(F,F,F,T,T)]
   
-  fwrite(data_merge,file=file.path("Data","SPAMextracted.csv"))
   
+  for(i in 1:nrow(hazard_layers)){
+    cat(i,"/",nrow(hazard_layers))
+    haz_choice<-hazard_layers$file_n[i]
+    irrigated<-hazard_layers[i,irrigated]
   
+  Haz_Ext_File<-paste0("raw_data/haz_comb/Haz",haz_choice,"_Ext.parquet")
+  haz_vop_file<-paste0("raw_data/haz_comb/hazard",haz_choice,"_vop_admin.parquet")
+  hazard_file<-hazard_layers[file_n==haz_choice,file]
+  HazTab<-fread(hazard_layers[file_n==haz_choice,legend])
   
-  
-  
-# 4) Prepare Hazards Data
-  Haz_Ext_File<-"Data/Haz_Ext.parquet"
   ## Load hazard layer #####
-  hazard_file<-'Data/combi_haz_table_cg.asc/combi_haz_table_cg.asc'
   Hazard<- terra::rast(hazard_file)
-  Hazard[Hazard$combi_haz_table_cg==0] <-NA
-  names(Hazard) <-'hazard'
-  
-  HazTab<-data.table(Code=1:9,
-                     Hazard=c('Drought (D)','Flood (F)','Climate variability (V)','D + V', 'Growing season reduction (R)', 'High growing season temperature (T)','F + T','V + T','Other combination'),
-                     ShortName=c('D','F','V','D+V', 'R', 'T','F+T','V+T','Other'))
-  
   HazardCrop<-terra::rast(hazard_file)
   
   ## load global crop land extent #####
-  #   Cropland extent data comes from https://glad.umd.edu/dataset/croplands
+  # Cropland extent data comes from https://glad.umd.edu/dataset/croplands
     Cropland<-terra::rast("raw_data/Global_cropland_3km_2019.tif")
     crs(HazardCrop)<-crs(Cropland)
     
@@ -146,15 +156,30 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
   
   
   ## Load mapspam #####
-  spam_ssa_file<-"raw_data/SPAM/ssa_crop_vop15_intd15.tif"
-  spam_global_file<-"raw_data/SPAM/global_crop_vop15_int15.tif"
-  spam_ssa_file_rs<-"Data/SPAM/ssa_crop_vop15_intd15_rs.tif"
-  spam_global_file_rs<-"Data/SPAM/global_crop_vop15_int15_rs.tif"
+  if(irrigated==F){
+    spam_ssa_file<-"raw_data/SPAM/ssa_crop_vop15_intd15_r.tif"
+    spam_global_file<-"raw_data/SPAM/global_crop_vop15_int15_r.tif"
+    
+    spam_ssa_file_rs<-"raw_data/SPAM/ssa_crop_vop15_intd15_r_rs.tif"
+    spam_global_file_rs<-"raw_data/SPAM/global_crop_vop15_int15_r_rs.tif"
+    
+    SPAMbyRegion<-fread("raw_data/SPAM/SPAMextracted_r.csv")
+  }else{
+    spam_ssa_file<-"raw_data/SPAM/ssa_crop_vop15_intd15_i.tif"
+    spam_global_file<-"raw_data/SPAM/global_crop_vop15_int15_i.tif"
+    
+    spam_ssa_file_rs<-"raw_data/SPAM/ssa_crop_vop15_intd15_i_rs.tif"
+    spam_global_file_rs<-"raw_data/SPAM/global_crop_vop15_int15_i_rs.tif"
+    SPAMbyRegion<-fread("raw_data/SPAM/SPAMextracted_i.csv")
+  }
   
+  if(!file.exists(spam_ssa_file_rs)){
   spam_africa<-terra::rast(spam_ssa_file)
   spam_global<-terra::rast(spam_global_file)
+  names(spam_global)<-ms_codes[match(names(spam_global),Code),Fullname]
   
-  # Resmaple to hazards
+  
+  # Resample to hazards
   cs<-cellSize(spam_africa,unit="km")
   spam_africa_d<-spam_africa/cs
   spam_africa_d<-terra::resample(spam_africa_d,Hazard)
@@ -162,17 +187,22 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
   
   terra::writeRaster(spam_africa,filename=spam_ssa_file_rs,overwrite=T)
   
-  # Resmaple to hazards
+  # Resample to hazards
   cs<-cellSize(spam_global,unit="km")
   spam_global_d<-spam_global/cs
   spam_global_d<-terra::resample(spam_global_d,Hazard)
   spam_global<-spam_global_d*cellSize(spam_global_d,unit="km")
   
   terra::writeRaster(spam_global,filename=spam_global_file_rs,overwrite=T)
-  
+  }else{
+    spam_africa<-terra::rast(spam_ssa_file_rs)
+    spam_global<-terra::rast(spam_global_file_rs)
+  }
+    
   ## extract hazard x vop by admin area ######
-  haz_vop_file<-"Data/hazard_vop_admin.parquet"
-  RegxCrop<-rbindlist(lapply(strsplit(SPAMbyRegion$Label,"-"),FUN=function(X){data.table(Region=X[1],Country=X[2],Crop=X[3],Rank=X[4])}))
+  RegxCrop<-rbindlist(lapply(strsplit(SPAMbyRegion$Label,"-"),FUN=function(X){
+    data.table(Region=X[1],Country=X[2],Crop=X[3],Rank=X[4])
+    }))
   areas<-unique(RegxCrop[,.(Region,Country)])
   
   Data<-rbindlist(pbapply::pblapply(1:nrow(areas),FUN=function(i){
@@ -186,9 +216,6 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
     }else{
       SPAM<-spam_global
     }
-    
-    # Hazard descriptions table
-    HazTab<-data.table(Code=1:9,Hazard=c('Drought (D)','Flood (F)','Climate variability (V)','D + V', 'Growing season reduction (R)', 'High growing season temperature (T)','F + T','V + T','Other combination'))
     
     # Crop & hazard by selected CGIAR region
     if(country!=""){
@@ -248,9 +275,9 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
       EX<-merge(EX,data.table(ID=1:length(cgiar_countries),Country=cgiar_countries$ADMIN),by="ID",all.x=T)
       
       # Hazard descriptions table
-      setnames(EX,"combi_haz_table_cg","Code")
-      
-      EX<-merge(EX,HazTab[,list(Code,ShortName)],by="Code",all.x=T)[,ID:=NULL][,Code:=NULL]
+      colnames(EX)[2]<-"ShortName"
+
+      EX<-merge(EX,HazTab[,list(Code,ShortName)],by="ShortName",all.x=T)[,ID:=NULL][,Code:=NULL]
       setnames(EX,"ShortName","Hazard")
       
       EX[is.na(Hazard),Hazard:="No Hazard"]
@@ -272,3 +299,23 @@ spam_global<-terra::rast("raw_data/SPAM/global_crop_vop15_int15.tif")
       EX<-dcast(EX,Country+Total.Area+Total.Perc+RuralPop+RuralPopRiskPerc+RuralPopRisk~Hazard,value.var = "Cropland.Perc")[Total.Area!=0]
       
       arrow::write_parquet(EX,Haz_Ext_File)
+  }
+    
+# 4) Combine Rainfed and Irrigated ####
+  files<-list.files("Data",paste(paste0("hazard",hazard_layers[grep("full",file),file_n]),collapse = "|"),full.names = T)
+  a<-arrow::read_parquet(files[1])
+  b<-arrow::read_parquet(files[2])
+  ab<-rbind(a,b)[order(Region,Country,Crop,Hazard)]
+  ab[Hazard=="No hazard",Hazard:="none"]
+  ab<-ab[,.(VoP=sum(VoP)),by=.(Region,Country,Crop,Hazard,Admin)]
+  ab[,VoP_tot_crop:=sum(VoP),by=.(Region,Country,Crop)]
+  ab[,VoP_tot:=sum(VoP),by=.(Region,Country)]
+  
+  ranks<-unique(ab[,.(Region,Country,VoP_tot_crop,Crop)])[,.(Crop=Crop[order(VoP_tot_crop,decreasing = T)],VoP_tot_crop=sort(VoP_tot_crop,decreasing = T),Rank=1:.N),by=.(Region,Country)]
+  ab<-merge(ab,ranks,all.x=T)
+  ab[,Label:=paste0(Region,"-",Country,"-",Crop,"-",Rank)]
+  arrow::write_parquet(ab,"Data/hazard_vop_admin.parquet")
+  
+  
+
+    
