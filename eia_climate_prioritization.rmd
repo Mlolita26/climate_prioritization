@@ -27,23 +27,17 @@ options(scipen = 999)
 if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
 
 required.packages <- c("arrow",
-                       "geoarrow",
                        "colourpicker",
                        "data.table",
                        "dplyr",
-                       "DT",
                        "ggplot2",
                        "ggpubr",
                        "MetBrewer",
-                       "miceadds",
-                       "raster",
                        "reshape",
                        "shiny",
-                       "terra",
                        "tidyverse",
                        "viridis",
-                       "wesanderson",
-                       "wbstats")
+                       "wesanderson")
 
 pacman::p_load(char=required.packages,install = T,character.only = T)
 
@@ -54,9 +48,7 @@ if(require("waffle")==F){
  
 ```
 
-## EiA Spatial Prioritization  {.tabset .tabset-fade .tabset-pills}
 ```{r Palette,echo=F}
-
 Viridis<-data.table(Source="viridis",Palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"))
 Met<-data.table(Source="MetBrewer",Palette=names(MetBrewer::MetPalettes))
 Wes<-data.table(Source="wesanderson",Palette=names(wesanderson::wes_palettes))
@@ -85,55 +77,16 @@ return(PAL)
 }
 ```
 
-```{r load regions, echo=F}
-region_file<-"Data/regions.geojson"
-country_file<-"Data/countries.geojson"
-
-cgiar_countries <- terra::vect(country_file)
-cgiar_regions<-terra::vect(region_file)
-```
-
-```{r load hazards, echo =F}
-# Load hazard layer 
-hazard_file<-'Data/combi_haz_table_cg.asc/combi_haz_table_cg.asc'
-Hazard<- terra::rast(hazard_file)
-Hazard[Hazard$combi_haz_table_cg==0] <-NA
-names(Hazard) <-'hazard'
-
-HazTab<-data.table(Code=1:9,
-                   Hazard=c('Drought (D)','Flood (F)','Climate variability (V)','D + V', 'Growing season reduction (R)', 'High growing season temperature (T)','F + T','V + T','Other combination'),
-                   ShortName=c('D','F','V','D+V', 'R', 'T','F+T','V+T','Other'))
-```
+## EiA Spatial Prioritization  {.tabset .tabset-fade .tabset-pills}
 
 ```{r load mapspam, echo =F}
-spam_ssa_file_rs<-"Data/ssa_crop_vop15_intd15_rs.tif"
-spam_global_file_rs<-"Data/global_crop_vop15_int15_rs.tif"
-
 haz_vop_file<-"Data/hazard_vop_admin.parquet"
 
-spam_africa<-terra::rast(spam_ssa_file_rs)
-spam_global<-terra::rast(spam_global_file_rs)
-
-# Read in summary of crop areas by region
-SPAMbyRegion<-data.table::fread(file="Data/SPAMextracted.csv")[Country=="",Country:=NA]
-```
-
-```{r read hazard x exposure data v1 ,echo=F}
-Data<-data.table(arrow::read_parquet(haz_vop_file))
-
-# Add rank for plot 2
-rank2<-unique(Data[order(VoP_total_crop,decreasing = T),.(VoP_total_crop,Region,Country,Crop)])[,Rank2:=1:.N]
-Data<-merge(Data,rank2,by=c("Region","Crop","Country","VoP_total_crop"),all.x=T,sort=F)
+Data<-data.table(arrow::read_parquet(haz_vop_file))[,Rank:=NULL]
 
 # Set an mimimum VoP to consider
-MinVoP<-10000 # $I 2015
-Data<-Data[VoP>MinVoP]
-SPAMbyRegion<-SPAMbyRegion[VoP>MinVoP]
-```
-
-```{r read hazards x exposure data v2, echo =F}
-  Haz_Ext_File<-"Data/Haz_Ext.parquet"
-  EX<-arrow::read_parquet(Haz_Ext_File)
+#MinVoP<-10000 # $I 2015
+#Data<-Data[VoP>MinVoP]
 ```
 
 ```{r Create Plot Save Location,echo=F}
@@ -146,8 +99,8 @@ if(!dir.exists(PlotDir)){
 
 ### WafflePlot
 ```{r choose region, echo=F}
- cg_regions<- sort(unique(cgiar_regions$CG_REG))
- cg_regions_selected<-sort(unique(cgiar_countries$CG_REG))
+ cg_regions<- Data[,sort(unique(Region))]
+ cg_regions_selected<-cg_regions[!cg_regions %in% c("Africa","Asia","Latin America")]
 
   checkboxGroupInput(inputId="Regions", 
                      label="Select regions",
@@ -157,15 +110,13 @@ if(!dir.exists(PlotDir)){
 ```
 
 ```{r choose country, echo=F}
-countries<-data.table(data.frame(cgiar_countries))
-
 # Dynamically filter countries based on selected regions
 renderUI({
   req(input$Regions) # Ensure regions are selected
 
   checkboxGroupInput(inputId="Countries", 
                    label="Select countries",
-                   choices =    sort(countries[CG_REG %in% input$Regions|region %in% input$Regions,ADMIN]),
+                   choices =    Data[!is.na(Country) & Country!="" & Region %in% input$Regions,sort(unique(Country))],
                    selected =NULL,
                    inline=T)
 })
@@ -176,11 +127,11 @@ Select the number of crops for each region to show, the top n
 :::: {style="display: flex;"}
 ::: {}
 ```{r Choose N Crops, echo=F}
-numericInput(inputId="Crop.N",
-             label="No. of crops to show (plot1 - per country)",
+numericInput(inputId="Crop.N1",
+             label="No. of crops to show (plot1 - per admin)",
              value=5,
              min=1,
-             max=SPAMbyRegion[,list(N=length(unique(Crop))),by=Region][,max(N)],
+             max=Data[,list(N=length(unique(Crop))),by=Region][,max(N)],
              step=1,
              width="300px")
 ```
@@ -199,7 +150,7 @@ numericInput(inputId="Crop.N2",
 ::::
 
 Crops are present by region, the numbers refer to the regional rank of the crop in terms of the sum of the MapSPAM variable chosen for that crop (in this case value of production in 2015 international dollars I$).
-```{r choose crops,echo=F}
+```{r choose crops,echo=F,eval=FALSE}
 renderUI({
   if(is.null(input$Countries)){
   checkboxGroupInput(inputId="Crops.Lab", 
@@ -215,6 +166,25 @@ renderUI({
                      inline=T) 
   }
 })
+
+```
+
+```{r choose crops 2,echo=F}
+crop_options<-reactive({
+  if(is.null(input$Countries)){
+    Data[Region %in% input$Regions & (is.na(Country)|Country==""),sort(unique(Crop))]
+  }else{
+    Data[Region %in% input$Regions & Country %in% input$Countries,sort(unique(Crop))]
+  }
+})
+
+renderUI({
+  checkboxGroupInput(inputId="crops", 
+                     label="Choose Crops",
+                     choices = crop_options(),
+                     selected = crop_options(),
+                     inline=T)
+  })
 
 ```
 
@@ -238,8 +208,9 @@ GridCol<-"white"
 NoHazardCol<-"grey50"
 Plot.Height<-0.3
 Plot.Width<-1.2
-
-
+p3_free<-"fixed"
+p3_order_val<-"Yes"
+p3_unit<-"Billion"
 ```
 
 :::: {style="display: flex;"}
@@ -374,6 +345,29 @@ numericInput(inputId="GridCols",
 
 ```
 :::
+:::{}
+```{r Plot 3 free, echo=F}
+
+  selectInput(inputId="p3_free",
+               label="P3 free y?",
+               choices=c("free","fixed"),
+               selected=p3_free, 
+               multiple = F, 
+               width="100px")
+
+```
+:::
+:::{}
+```{r Plot 3 order, echo=F}
+  selectInput(inputId="p3_order_val",
+               label="P3 order val?",
+               choices=c("Yes","No"),
+               selected=p3_order_val, 
+               multiple = F, 
+               width="100px")
+
+```
+:::
 ::::
 
 :::: {style="display: flex;"}
@@ -381,8 +375,8 @@ numericInput(inputId="GridCols",
 ```{r Choose Plot,echo=F}
   selectInput(inputId="plot_choice", 
               label="Choose plot",
-              choices = c("plot1","plot2"),
-              selected="plot1", 
+              choices = c("plot1","plot2","plot3"),
+              selected="plot2", 
               multiple = F, 
               width="120px")
 ```
@@ -395,11 +389,6 @@ numericInput(inputId="GridCols",
               selected=Palette, 
               multiple = F, 
               width="150px")
-
-HazardPalette<-reactive({PalFun(PalName=input$Palette,
-                      N=nrow(HazTab),
-                      Names=HazTab$Hazard)
-})
 ```
 :::
 :::{}
@@ -448,31 +437,59 @@ numericInput(inputId="Plot.Width",
              width="200px")
 ```
 :::
+:::{}
+```{r p3 Choose Unit,echo=F}
+  selectInput(inputId="p3_unit", 
+              label="P3 VoP Unit",
+              choices = c("Thousand","Million","Billion"),
+              selected=p3_unit, 
+              multiple = F, 
+              width="100px")
+```
+:::
 ::::
 
 ```{r calculate units, echo=F}
+dat<-reactive({
+    if(is.null(input$Countries)){
+    dat<-Data[Region %in% input$Regions & Country=="" & Crop %in% input$crops]
+  }else{
+    dat<-Data[Country %in% input$Countries & Crop %in% input$crops]
+  }
+  
+  # Add ranks
+  rank2<-unique(dat[order(VoP_tot_crop,decreasing = T),.(VoP_tot_crop,Region,Country,Crop)])[,Rank2:=1:.N]
+  dat<-merge(dat,rank2,by=c("Region","Crop","Country","VoP_tot_crop"),all.x=T,sort=F)
+  
+  rank<-unique(dat[order(Region,Country,VoP_tot_crop,decreasing = T),.(Region,Country,VoP_tot_crop,Crop)])[,Rank:=1:.N,by=.(Region,Country)]
+  dat<-merge(dat,rank,by=c("Region","Crop","Country","VoP_tot_crop"),all.x=T,sort=F)
+  dat
+})
+
 square_val<-reactive({
-  dat<-Data[Label %in% input$Crops.Lab]
-  max_vop<-10^(nchar(dat[,max(VoP)])-2)
-  dat[,VoP:=VoP/max_vop]
-  scale_factor<-dat[,max(VoP,na.rm = T)/input$Scaler]
+  dat1<-copy(dat())
+  ranks<-dat1[,sort(unique(Rank))]
+  if(length(ranks)>input$Crop.N1){
+  ranks<-ranks[1:input$Crop.N1]
+    dat1<-dat1[Rank %in% ranks]
+  }
+  
+  max_vop<-10^(nchar(dat1[,max(VoP)])-2)
+  dat1[,VoP:=VoP/max_vop]
+  scale_factor<-dat1[,max(VoP,na.rm = T)/input$Scaler]
   round(scale_factor*max_vop/10^6,1)
 })
 
 square_val2<-reactive({
-    if(is.null(input$Countries)){
-    dat<-Data[Region %in% input$Regions & Country==""]
-  }else{
-    dat<-Data[Country %in% input$Countries]
-  }
-  ranks<-dat[,sort(unique(Rank2))]
+  dat2<-copy(dat())
+  ranks<-dat2[,sort(unique(Rank2))]
   if(length(ranks)>input$Crop.N2){
   ranks<-ranks[1:input$Crop.N2]
-    dat<-dat[Rank2 %in% ranks]
-  } 
-  max_vop<-10^(nchar(dat[,max(VoP)])-2)
-  dat[,VoP:=VoP/max_vop]
-  scale_factor<-dat[,max(VoP,na.rm = T)/input$Scaler]
+    dat2<-dat2[Rank2 %in% ranks]
+  }
+  max_vop<-10^(nchar(dat2[,max(VoP)])-2)
+  dat2[,VoP:=VoP/max_vop]
+  scale_factor<-dat2[,max(VoP,na.rm = T)/input$Scaler]
   round(scale_factor*max_vop/10^6,1)
 })
 
@@ -484,7 +501,8 @@ Plot 1: Waffle grid unit = `r reactive(square_val())` million IntD 2015. Plot 2:
 #https://rud.is/rpubs/building-waffle-charts.html 
 
 Waffler<-function(data,
-                  Crops.Lab,
+                  Crops,
+                  Crop.N1,
                   Crop.N2,
                   Regions,
                   Countries,
@@ -501,7 +519,10 @@ Waffler<-function(data,
                   Background,
                   NoHazardCol,
                   GridSpace,
-                  GridCol){
+                  GridCol,
+                  p3_free,
+                  p3_order_val,
+                  p3_unit){
   
   if(TextWrap=="Yes"){
     data[,Crops:=gsub("oil crops","oil-crops",Crops)]
@@ -510,22 +531,19 @@ Waffler<-function(data,
   }
 
   if(RmNoHaz=="Yes"){
-    data<-data[Hazard!="No hazard"]
+    data<-data[Hazard!="none"]
   }
-  
-   if(RmNoHaz=="No"){
-    HazardPalette[names(HazardPalette)=="No Hazard"]<-NoHazardCol
-  }
-  
+
   # Create combined names
   data[, Combined := paste0(Admin, ":", Crop)]
   data[, Combined := factor(Combined, levels = data[, .(Total = sum(VoP)), by = Combined][order(-Total), Combined])]
   
-  # Factorize hazard
-  data[,Hazard:=factor(Hazard,levels=sort(unique(Hazard)))]
-
   # Data for plot 1
-  data1<-data[Label %in% Crops.Lab]
+  ranks<-data[,sort(unique(Rank))]
+  if(length(ranks)>Crop.N1){
+  ranks<-ranks[1:Crop.N1]
+    data1<-data[Rank %in% ranks]
+  } 
   max_vop<-10^(nchar(data1[,max(VoP)])-2)
   data1[,VoP:=VoP/max_vop]
   scale_factor<-data1[,max(VoP,na.rm = T)/Scaler]
@@ -534,29 +552,112 @@ Waffler<-function(data,
   data1<-data1[VoP>0]
   
   # Data for plot 2
-  if(is.null(Countries)){
-    data2<-data[Region %in% Regions & Country==""]
-  }else{
-    data2<-data[Country %in% Countries]
-  }
-  ranks<-data2[,sort(unique(Rank2))]
+  ranks<-data[,sort(unique(Rank2))]
   if(length(ranks)>Crop.N2){
   ranks<-ranks[1:Crop.N2]
-  data2<-data2[Rank2 %in% ranks]
+  data2<-data[Rank2 %in% ranks]
   }
   max_vop<-10^(nchar(data2[,max(VoP)])-2)
   data2[,VoP:=VoP/max_vop]
   scale_factor<-data2[,max(VoP,na.rm = T)/Scaler]
   data2[,VoP:=round(VoP/scale_factor,0)]
   data2<-data2[VoP>0]
+  
+  # Data for plot 3
+  data3<-copy(data)
+  if(p3_unit=="Million"){
+  data3[,VoP:=VoP/10^6]
+  }
+  if(p3_unit=="Thousand"){
+  data3[,VoP:=VoP/10^3]
+  }
+  if(p3_unit=="Billion"){
+  data3[,VoP:=VoP/10^9]
+  }
 
+  # Legend Palettes
+    hazards1<-data1[,sort(unique(Hazard))]
+    hazards2<-data2[,sort(unique(Hazard))]
+    hazards3<-data3[,sort(unique(Hazard))]
+
+    HazardPalette1<-PalFun(PalName=HazardPalette,
+                      N=length(hazards1),
+                      Names=hazards1)
+    
+    HazardPalette2<-PalFun(PalName=HazardPalette,
+                  N=length(hazards2),
+                  Names=hazards2)
+    
+    HazardPalette3<-PalFun(PalName=HazardPalette,
+              N=length(hazards2),
+              Names=hazards2)
+  
+   if(RmNoHaz=="No"){
+     N<-which(names(HazardPalette1)=="none")
+     N1<-which(names(HazardPalette1)!="none")
+     HazardPalette1[N]<-NoHazardCol
+     HazardPalette1<-HazardPalette1[c(N,N1)]
+     
+     N<-which(names(HazardPalette2)=="none")
+     N1<-which(names(HazardPalette2)!="none")
+     HazardPalette2[N]<-NoHazardCol
+     HazardPalette2<-HazardPalette2[c(N,N1)]    
+     
+    N<-which(names(HazardPalette3)=="none")
+     N1<-which(names(HazardPalette3)!="none")
+     HazardPalette3[N]<-NoHazardCol
+     HazardPalette3<-HazardPalette3[c(N,N1)]   
+   }
+    
+    data1[,Hazard:=factor(Hazard,levels = names(HazardPalette1))]
+    data2[,Hazard:=factor(Hazard,levels = names(HazardPalette2))]
+    data3[,Hazard:=factor(Hazard,levels = rev(names(HazardPalette3)))]
+
+  # Plot 3
+  gg_theme <- theme(
+  text = element_text(size = TextSize),
+  plot.margin = margin(0, 0, 0, 0, unit = "cm"), # Remove plot margin
+  panel.spacing = unit(0, "pt"), # No space between panels
+  legend.position.inside =  c(0.8, 0.2),
+  panel.background = element_rect(fill = Background),
+  strip.background = element_blank(),
+  strip.text.y.left = element_text(
+    angle = 0,                # Horizontal strip labels
+    hjust = 1,                # Align strip labels horizontally
+    vjust = 0.5,              # Center vertically
+    margin = margin(0, 0, 0, 0) # Remove strip margins
+  ),
+  panel.grid.minor =  element_blank(),
+  panel.grid.major.y = element_blank()
+  )
+  
+  if(p3_order_val=="Yes"){
+    crop_order<-data3[,.(VoP=sum(VoP,na.rm=T)),by=Crop][order(VoP,decreasing = T),Crop]
+    data3$Crop <- factor(data3$Crop, levels = rev(crop_order))
+  }else{
+    data3$Crop <- factor(data3$Crop, levels = rev(unique(data3$Crop)))
+  }
+
+  
+  g3 <- ggplot(data3, aes(x = Crop, y = VoP, fill = Hazard)) +
+  geom_bar(stat = "identity", position =  position_stack(reverse = F), color = GridCol,width=1) +
+  scale_fill_manual(values = HazardPalette3, drop = FALSE) +
+  facet_grid(. ~ Admin, switch = "y", drop = FALSE,scales = p3_free) +
+  theme_minimal() +
+  labs(x = NULL, y = paste0("Value of Production (",p3_unit," $I 2015)")) +
+  gg_theme+
+  scale_y_continuous(expand = c(0.003,0.01))+
+  coord_flip()
+  plot(g3)
+  
   # Plot 2
-gg_theme <- theme(
+  gg_theme <- theme(
   text = element_text(size = TextSize),
   plot.margin = margin(0, 0, 0, 0, unit = "cm"), # Remove plot margin
   panel.spacing = unit(0, "lines"), # No space between panels
   axis.ticks = element_blank(),
   axis.line = element_blank(),
+  legend.position.inside =  c(0.8, 0.2),
   panel.background = element_rect(fill = Background),
   strip.background = element_blank(),
   strip.text.y.left = element_text(
@@ -568,29 +669,29 @@ gg_theme <- theme(
   axis.text = element_blank(),
   axis.title = element_blank(),
   panel.grid = element_blank()
-)
-
-  g <- ggplot(data2, aes(fill = Hazard, values = VoP)) +
+  )
+    
+  g2 <- ggplot(data2, aes(fill = Hazard, values = VoP)) +
   waffle::geom_waffle(n_rows = NRows2, size = GridSpace, colour = GridCol, flip = FALSE) +
-  scale_fill_manual(values = HazardPalette, drop = FALSE) +
+  scale_fill_manual(values = HazardPalette2, drop = FALSE) +
   scale_x_continuous(expand = c(0.005,0))+
   scale_y_continuous(expand = c(0.02,0.02))+
   facet_grid(Combined ~ ., switch = "y") + # Use facet_grid with switched strips
   gg_theme
 
   # Plot 1
-  gg_theme<-theme(text=element_text(size=TextSize),
-          panel.spacing = unit(PanelSpace,"lines"),
-          axis.ticks = element_blank(),
-          axis.line = element_blank(),
-          panel.background = element_rect(fill=Background),
-          strip.background = element_blank(),
-          strip.text = element_text(margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")),
-          plot.margin = margin(0, 0, 0, 0, unit = "cm"), 
-          axis.text = element_blank(),
-          axis.title = element_blank(),
-          panel.grid = element_blank()
-          )
+  gg_theme<-theme(text = element_text(size=TextSize),
+                  title = element_text(size=TextSize*0.7),
+                  panel.spacing = unit(PanelSpace,"lines"),
+                  axis.ticks = element_blank(),
+                  axis.line = element_blank(),
+                  panel.background = element_rect(fill=Background),
+                  strip.background = element_blank(),
+                  strip.text = element_text(margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")),
+                  plot.margin = margin(0, 0, 0, 0, unit = "cm"), 
+                  axis.text = element_blank(),
+                  axis.title = element_blank(),
+                  panel.grid = element_blank())
   
   admin<-data1[,sort(unique(Admin))]
   Plots<-lapply(admin,FUN=function(REG){
@@ -602,10 +703,10 @@ gg_theme <- theme(
   g<-ggplot(Plot.Dat,aes(fill = Hazard, values = VoP)) +
     expand_limits(x=c(0,0), y=c(0,0)) +
     coord_equal() +
-    labs(fill = NULL, colour = NULL) +
+    labs(fill = NULL, colour = NULL,title = REG) + 
     waffle::geom_waffle(n_rows = NRows, size = GridSpace, colour = GridCol, flip = TRUE)+
     gg_theme+
-    scale_fill_manual(values=HazardPalette,drop=F)+
+    scale_fill_manual(values=HazardPalette1,drop=F)+
     facet_wrap(~Crop, nrow = FacetRows, strip.position = "bottom")+
     scale_y_continuous(limits=c(0,MaxY),expand = c(0,0))
   
@@ -615,15 +716,16 @@ gg_theme <- theme(
   
   names(Plots)<-admin
 
-  return(list(Plot1=Plots,Plot2=g))
+  return(list(Plot1=Plots,Plot2=g2,Plot3=g3))
 }
 
 ```
 
 ```{r create plots,echo=F}
 PlotData<-reactive({
-  Waffler(data=copy(Data),
-          Crops.Lab=input$Crops.Lab,
+  Waffler(data=copy(dat()),
+          Crops=input$crops,
+          Crop.N1=input$Crop.N1,
           Crop.N2=input$Crop.N2,
           Regions=input$Regions,
           Countries=input$Countries,
@@ -632,7 +734,7 @@ PlotData<-reactive({
           NRows2=input$NRows2,
           FacetRows=input$FacetRows,
           TextSize=input$TextSize,
-          HazardPalette=HazardPalette(),
+          HazardPalette=input$Palette,
           LegPos=input$LegPos,
           PanelSpace=input$PanelSpace,
           TextWrap=input$TextWrap,
@@ -640,7 +742,10 @@ PlotData<-reactive({
           Background=input$Background,
           NoHazardCol=input$NoHazardCol,
           GridSpace=input$GridSpace,
-          GridCol=input$GridCol)
+          GridCol=input$GridCol,
+          p3_free=input$p3_free,
+          p3_order_val=input$p3_order_val,
+          p3_unit=input$p3_unit)
 })
 
 ```
@@ -648,7 +753,7 @@ PlotData<-reactive({
 ```{r Plot Size Adjust Functions , echo=F}
 Plot.Height <- function(){
   x<-  input$Plot.Height*400*length(PlotData()$Plot1)
-  if(input$plot_choice=="plot2"){
+  if(input$plot_choice %in% c("plot2","plot3")){
   x<- input$Plot.Height*(50+input$Crop.N2*100)
   }
   return(x)
@@ -662,13 +767,23 @@ Plot.Width <- function(){
 ```{r Plot waffles,echo=F}
 renderPlot({
   if(input$plot_choice=="plot1"){
-  ggpubr::ggarrange(plotlist=PlotData()$Plot1, 
+
+  plot_list<-PlotData()$Plot1
+  
+  combined_plots<-ggpubr::ggarrange(plotlist=plot_list, 
                     ncol=input$GridCols,
-                    nrow=input$GridRows, 
-                    common.legend = TRUE, 
-                    legend=input$LegPos)
+                    nrow=input$GridRows,
+                    common.legend = T,
+                    legend = input$LegPos)
+  
+  combined_plots
+
   }else{
+      if(input$plot_choice=="plot2"){
      PlotData()$Plot2
+      }else{
+      PlotData()$Plot3
+      }
   }
   },height= Plot.Height,width=Plot.Width)
 ```
@@ -762,264 +877,3 @@ renderDT({
 })
 ```
 
-### Hazard map
-:::: {style="display: flex;"}
-::: {}
-```{r select hazard map country,echo=F}
-selectInput(
-  inputId = "SelectedCountry",
-  label = "Select a Country:",
-  choices = c("All", sort(unique(cgiar_countries$ADMIN))),
-  selected = "All",
-  multiple = T,
-  width = "200px"
-)
-```
-:::
-:::{}
-```{r Adjust Map Height, echo=F}
-numericInput(inputId="Map.Height",
-             label="Adjust map height",
-             value=1,
-             min=0.1,
-             max=3,
-             step=0.1, 
-             width="160px")
-```
-:::
-:::{}
-```{r Adjust Map Width , echo=F}
-numericInput(inputId="Map.Width",
-             label="Adjust map width",
-             value=1,
-             min=0.1,
-             max=3,
-             step=0.1,
-             width="160px")
-```
-:::
-:::{}
-```{r Map border colour picker, echo =F}
-  colourInput(inputId="MapBorder",
-              label="Border colour",
-              value="black")
-```
-:::
-:::{}
-```{r Border Width , echo=F}
-numericInput(inputId="BorderWidth",
-             label="Border width",
-             value=0.2,
-             min=0.1,
-             max=2,
-             step=0.1,
-             width="120px")
-```
-:::
-:::{}
-```{r Map Text Size , echo=F}
-numericInput(inputId="MapTextSize",
-             label="Text size",
-             value=16,
-             min=1,
-             max=30,
-             step=1,
-             width="120px")
-```
-:::
-::::
-
-```{r Create Hazard Map Function,echo=F}
-
-WorldMapFun<-function(PalName,
-                      Hazard,
-                      cgiar_countries,
-                      SelectedCountry,
-                      MapBorder,
-                      BorderWidth,
-                      TextSize,
-                      HazTab){
-  
-HazardPalette<-PalFun(PalName=PalName,
-                      N=nrow(HazTab),
-                      Names=HazTab$ShortName)
-
-Hazards_Plot<-data.table(as.data.frame(raster::crop(raster::mask(Hazard,cgiar_countries),cgiar_countries),xy=T))
-setnames(Hazards_Plot,"hazard","Code")
-Hazards_Plot<-merge(Hazards_Plot,HazTab[,list(Code,ShortName)],by="Code",all.x=T)
-setnames(Hazards_Plot,"ShortName","Hazards")
-
-world <- ggplot2::map_data("world")
-
-if(SelectedCountry!="All"){
-  cgiar_countries<-cgiar_countries[cgiar_countries$ADMIN %in% SelectedCountry,]
-}
-
-Countries<-cgiar_countries$ADMIN
-Countries[Countries=="The Bahamas"]<-"Bahamas"
-Countries[Countries=="Republic of the Congo"]<-"Republic of Congo"
-Countries[Countries=="Guinea Bissau"]<-"Guinea-Bissau"
-Countries[Countries=="East Timor"]<-"Timor-Leste"
-Countries[Countries=="Trinidad and Tobago"]<-"Trinidad"
-Countries[Countries=="United Republic of Tanzania"]<-"Tanzania"
-Countries[Countries=="Saint Vincent and the Grenadines"]<-"Saint Vincent"
-Countries[Countries=="eSwatini"]<-"Swaziland"
-Countries[Countries=="United States Virgin Islands"]<-"Virgin Islands"
-Countries<-Countries[!Countries %in% c("Netherlands","France")]
-
-Hazards_Plot<-terra::crop(Hazards_Plot,cgiar_countries)
-
-
-world<-world[world$region %in% Countries,]
-
-g <- ggplot() +
-  geom_tile(
-    data = Hazards_Plot,
-    aes(x = x, y = y, fill = Hazards)
-  ) +
-  scale_fill_manual(values = HazardPalette, na.value = "white") +
-  scale_x_continuous(expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0)) +
-  geom_map(
-    data = world,
-    map = world,
-    aes(map_id = region),
-    color = MapBorder, 
-    fill = NA, 
-    linewidth = BorderWidth
-  ) +
-  coord_quickmap() +
-  theme(
-    axis.title = element_blank(),
-    axis.text = element_blank(),
-    axis.ticks = element_blank(),
-    text = element_text(size = TextSize, face = "bold"),
-    legend.position = c(0.8, 0.2),
-    plot.background = element_blank(),
-    panel.background = element_blank()
-  ) +
-  guides(fill = guide_legend(ncol = 2))
-
-
-return(g)
-}
-```
-
-```{r create plot,echo=F}
-Map<-reactive({
-  WorldMapFun(PalName=input$Palette,
-              Hazard = Hazard,
-              cgiar_countries = cgiar_countries,
-              SelectedCountry=input$SelectedCountry,
-              MapBorder=input$MapBorder,
-              BorderWidth=input$BorderWidth,
-              TextSize = input$MapTextSize,
-              HazTab = HazTab)
-  })
-```
-
-
-```{r Map Size Adjust Functions , echo=F}
-Map.Height <- function(){
-  input$Map.Height*442
-}
-
-Map.Width <- function(){
-  input$Map.Width*1200
-}
-```
-
-
-```{r Plot Hazard Map,echo=F}
-renderPlot({Map()},height=Map.Height,width=Map.Width)
-```
-
-
-:::: {style="display: flex;"}
-::: {}
-```{r  Save Map, echo=F}
-selectInput(inputId="Map.Save.Plot", 
-            label="Enable Save?",
-            choices = c("Yes","No"),
-            selected="No",
-            width="120px")   
-```
-:::
-:::{}
-```{r Map Save Width, echo=F}
-numericInput(inputId="Map.Save.Width",
-             label="Map save width (mm)", 
-             value=180,
-             min=30,
-             max=300,
-             step=10,
-             width="170px")  
-```         
-:::
-:::{}
-```{r Map Save Height, echo=F}
-numericInput(inputId="Map.Save.Height",
-             label="Map save height (mm)", 
-             value=round(180*0.37),
-             min=30,
-             max=300,
-             step=10,
-             width="200px")  
-```   
-:::
-:::{}
-```{r Map Scale Height, echo=F}
-numericInput(inputId="Map.Scale",
-             label="Text scaling", 
-             value=1.5,
-             min=0.5,
-             max=4,
-             step=0.1,
-             width="100px")  
-``` 
-:::
-:::{}
-```{r Map - Plot Filename, echo=F}
-textInput(inputId="Map.Filename",
-          label="Enter map filename", 
-          value="Map")
-
-```
-:::
-::::
-  
-```{r Save map, echo=F}
-
-reactive({
-  if(input$Map.Save.Plot=="Yes"){
-    ggsave(filename = paste0(input$Map.Filename,".png"),
-           plot = Map(),
-           path = PlotDir,
-           width= input$Map.Save.Width,
-           height = input$Map.Save.Height,
-           units = "mm",
-           scale = input$Map.Scale,
-           dpi = 600,
-           type = "cairo")
-  }
-})
-
-
-
-```
-
-### Country x Hazard Table
-```{r extract country data,echo=F}
-renderDT({
-  datatable(EX,
-            caption="Cropland Hazards by Country",
-            extensions = 'Buttons',
-            colnames = c('Country', 'Crop area (km2)', '% crop at risk', 'Rural pop (M)',   '% pop at risk','Pop at risk (M)',colnames(EX)[7:length(colnames(EX))]), 
-            filter = "top",
-            options = list(dom = 'Blfrtip',
-                           buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-                           lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
-  
-})
-
-```
