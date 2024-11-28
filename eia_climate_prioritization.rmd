@@ -36,7 +36,6 @@ required.packages <- c("arrow",
                        "MetBrewer",
                        "reshape",
                        "shiny",
-                    #   "tidyverse",
                        "viridis",
                        "wesanderson")
 
@@ -81,13 +80,12 @@ return(PAL)
 ## EiA Spatial Prioritization  {.tabset .tabset-fade .tabset-pills}
 
 ```{r load mapspam, echo =F}
-haz_vop_file<-"Data/hazard_vop_admin.parquet"
+haz_ex_file<-"Data/hazard_ex_admin.parquet"
 
-Data<-data.table(arrow::read_parquet(haz_vop_file))
+Data<-data.table(arrow::read_parquet(haz_ex_file))
 
-# Set an mimimum VoP to consider
-#MinVoP<-10000 # $I 2015
-#Data<-Data[VoP>MinVoP]
+# default variable selection
+var_choice<-"vop"
 ```
 
 ```{r Create Plot Save Location,echo=F}
@@ -99,16 +97,30 @@ if(!dir.exists(PlotDir)){
 ```
 
 ### WafflePlot
+:::: {style="display: flex;"}
+::: {}
+```{r Choose variable,echo=F}
+  selectInput(inputId="var_choice",
+               label="Choose spam variable",
+               choices=Data[,unique(variable)],
+               selected=var_choice, 
+               multiple = F, 
+               width="150px")
+```
+:::
+:::{}
 ```{r choose region, echo=F}
  cg_regions<- Data[,sort(unique(Region))]
- cg_regions_selected<-cg_regions[cg_regions %in% c("Africa","LAC","SA","SEA")]
+ Regions<-cg_regions[cg_regions %in% c("Africa","LAC","SA","SEA")]
 
   checkboxGroupInput(inputId="Regions", 
                      label="Select regions",
                      choices = cg_regions,
-                     selected = cg_regions_selected,
+                     selected = Regions,
                      inline=T)
 ```
+:::
+::::
 
 ```{r choose country, echo=F}
 # Dynamically filter countries based on selected regions
@@ -125,14 +137,42 @@ renderUI({
 
 Select the number of crops for each region to show, the top n 
 
+```{r set default parameter values,echo=F}
+Scaler<-200
+NRows<-15
+NRows2<-2
+FacetRows<-1
+TextSize<-20
+TextWrap<-"No"
+RmNoHaz<-"Yes"
+LegPos<-"bottom"
+PanelSpace<-0
+GridSpace<-0.3
+GridCols<-2
+GridRows<-3
+Palette<-"turbo"
+Background<-"white"
+GridCol<-"white"
+NoHazardCol<-"grey50"
+Plot.Height<-0.3
+Plot.Width<-1.2
+p3_free<-"fixed"
+p3_order_val<-"Yes"
+p3_unit<-"Billion"
+Crop.N1<-5
+Crop.N2<-20
+Crop.N3<-Data[,length(unique(Crop))]
+n_haz<-10
+```
+
 :::: {style="display: flex;"}
 ::: {}
 ```{r Choose N Crops, echo=F}
 numericInput(inputId="Crop.N1",
              label="No. of crops to show (plot1)",
-             value=5,
+             value=Crop.N1,
              min=1,
-             max=Data[,list(N=length(unique(Crop))),by=Region][,max(N)],
+             max=Data[,length(unique(Crop))],
              step=1,
              width="300px")
 ```
@@ -140,8 +180,8 @@ numericInput(inputId="Crop.N1",
 :::{}
 ```{r Choose N Crops 2, echo=F}
 numericInput(inputId="Crop.N2",
-             label="No. of crops to show (plot2)",
-             value=20,
+             label="No. of rows to show (plot2)",
+             value=Crop.N2,
              min=1,
              max=50,
              step=1,
@@ -152,9 +192,20 @@ numericInput(inputId="Crop.N2",
 ```{r Choose N Crops 3, echo=F}
 numericInput(inputId="Crop.N3",
              label="No. of crops to show (plot3)",
-             value=Data[,length(unique(Crop))],
+             value=Crop.N3,
              min=1,
              max=Data[,length(unique(Crop))],
+             step=1,
+             width="300px")
+```
+:::
+:::{}
+```{r Choose N Hazards, echo=F}
+numericInput(inputId="Haz.N",
+             label="No. of hazards to show",
+             value=n_haz,
+             min=1,
+             max=Data[,length(unique(Hazard))],
              step=1,
              width="300px")
 ```
@@ -180,30 +231,6 @@ renderUI({
 
 ```
 
-
-```{r set default parameter values,echo=F}
-Scaler<-200
-NRows<-15
-NRows2<-2
-FacetRows<-1
-TextSize<-20
-TextWrap<-"No"
-RmNoHaz<-"Yes"
-LegPos<-"bottom"
-PanelSpace<-0
-GridSpace<-0.3
-GridCols<-2
-GridRows<-3
-Palette<-"turbo"
-Background<-"white"
-GridCol<-"white"
-NoHazardCol<-"grey50"
-Plot.Height<-0.3
-Plot.Width<-1.2
-p3_free<-"fixed"
-p3_order_val<-"Yes"
-p3_unit<-"Billion"
-```
 
 :::: {style="display: flex;"}
 ::: {}
@@ -339,14 +366,12 @@ numericInput(inputId="GridCols",
 :::
 :::{}
 ```{r Plot 3 free, echo=F}
-
   selectInput(inputId="p3_free",
                label="P3 free y?",
                choices=c("free","fixed"),
                selected=p3_free, 
                multiple = F, 
                width="100px")
-
 ```
 :::
 :::{}
@@ -444,17 +469,29 @@ numericInput(inputId="Plot.Width",
 ```{r calculate units, echo=F}
 dat<-reactive({
     if(is.null(input$Countries)){
-    dat<-Data[Region %in% input$Regions & (Country==""|is.na(Country)) & Crop %in% input$crops]
+    dat<-Data[Region %in% input$Regions & (Country==""|is.na(Country)) & Crop %in% input$crops & variable==input$var_choice]
   }else{
-    dat<-Data[Country %in% input$Countries & Crop %in% input$crops]
+    dat<-Data[Country %in% input$Countries & Crop %in% input$crops & variable==input$var_choice]
   }
   
-  # Add ranks
-  rank2<-unique(dat[order(VoP_tot_crop,decreasing = T),.(VoP_tot_crop,Region,Country,Crop)])[,Rank2:=1:.N]
-  dat<-merge(dat,rank2,by=c("Region","Crop","Country","VoP_tot_crop"),all.x=T,sort=F)
+  # Reduce number of hazards
+  n_haz<-input$Haz.N
+  haz_rank<-dat[Hazard!="none",.(value=sum(value,na.rm=T)),by=Hazard][order(value,decreasing = T)][,rank:=1:.N]
+  haz_choice<-haz_rank[grep("[(]",Hazard),Hazard]
+  n_haz<-n_haz-length(haz_choice)
+  if(n_haz>0){
+  haz_choice<-c(haz_choice,haz_rank[!grepl("[(]",Hazard),Hazard][1:n_haz])
+  }
+  dat<-dat[!Hazard %in% c(haz_choice,"none") & !is.na(Hazard),Hazard:="other combination"]
   
-  rank<-unique(dat[order(Region,Country,VoP_tot_crop,decreasing = T),.(Region,Country,VoP_tot_crop,Crop)])[,Rank:=1:.N,by=.(Region,Country)]
-  dat<-merge(dat,rank,by=c("Region","Crop","Country","VoP_tot_crop"),all.x=T,sort=F)
+  dat<-dat[,.(value=sum(value,na.rm=T)),by=.(Hazard,value_tot_crop,Region,Country,Admin,Crop,variable)]
+    
+  # Add ranks
+  rank2<-unique(dat[order(value_tot_crop,decreasing = T),.(value_tot_crop,Region,Country,Crop)])[,Rank2:=1:.N]
+  dat<-merge(dat,rank2,by=c("Region","Crop","Country","value_tot_crop"),all.x=T,sort=F)
+  
+  rank<-unique(dat[order(Region,Country,value_tot_crop,decreasing = T),.(Region,Country,value_tot_crop,Crop)])[,Rank:=1:.N,by=.(Region,Country)]
+  dat<-merge(dat,rank,by=c("Region","Crop","Country","value_tot_crop"),all.x=T,sort=F)
   dat
 })
 
@@ -466,10 +503,10 @@ square_val<-reactive({
     dat1<-dat1[Rank %in% ranks]
   }
   
-  max_vop<-10^(nchar(dat1[,max(VoP)])-2)
-  dat1[,VoP:=VoP/max_vop]
-  scale_factor<-dat1[,max(VoP,na.rm = T)/input$Scaler]
-  round(scale_factor*max_vop/10^6,1)
+  max_value<-10^(nchar(dat1[,max(value)])-2)
+  dat1[,value:=value/max_value]
+  scale_factor<-dat1[,max(value,na.rm = T)/input$Scaler]
+  round(scale_factor*max_value/10^6,1)
 })
 
 square_val2<-reactive({
@@ -479,15 +516,19 @@ square_val2<-reactive({
   ranks<-ranks[1:input$Crop.N2]
     dat2<-dat2[Rank2 %in% ranks]
   }
-  max_vop<-10^(nchar(dat2[,max(VoP)])-2)
-  dat2[,VoP:=VoP/max_vop]
-  scale_factor<-dat2[,max(VoP,na.rm = T)/input$Scaler]
-  round(scale_factor*max_vop/10^6,1)
+  max_value<-10^(nchar(dat2[,max(value)])-2)
+  dat2[,value:=value/max_value]
+  scale_factor<-dat2[,max(value,na.rm = T)/input$Scaler]
+  round(scale_factor*max_value/10^6,1)
+})
+
+unit_x<-reactive({
+  if(input$var_choice=="vop"){"IntD 2015"}else{"ha"}
 })
 
 ```
 
-Plot 1: Waffle grid unit = `r reactive(square_val())` million IntD 2015. Plot 2: Waffle grid unit = `r reactive(square_val2())` million IntD 2015.
+Plot 1: Waffle grid unit = `r reactive(square_val())` million `r reactive(unit_x())`. Plot 2: Waffle grid unit = `r reactive(square_val2())` million `r reactive(unit_x())`.
 
 ```{r create plot function, echo=F}
 #https://rud.is/rpubs/building-waffle-charts.html 
@@ -529,7 +570,19 @@ Waffler<-function(data,
 
   # Create combined names
   data[, Combined := paste0(Admin, ":", Crop)]
-  data[, Combined := factor(Combined, levels = data[, .(Total = sum(VoP)), by = Combined][order(-Total), Combined])]
+  data[, Combined := factor(Combined, levels = data[, .(Total = sum(value)), by = Combined][order(-Total), Combined])]
+  
+  # ylab
+  variable<-data[,unique(variable)]
+  if(variable=="vop"){
+    spam_lab1<-paste0("Value of production (",p3_unit," $I 2015)")
+    spam_lab2<-"Value of production"
+  }
+  
+   if(variable=="ha"){
+    spam_lab1<-paste0("Harvested area (",p3_unit,"ha)")
+    spam_lab2<-"Harvested area"
+  }
   
   # Data for plot 1
   ranks<-data[,sort(unique(Rank))]
@@ -537,12 +590,12 @@ Waffler<-function(data,
   ranks<-ranks[1:Crop.N1]
     data1<-data[Rank %in% ranks]
   } 
-  max_vop<-10^(nchar(data1[,max(VoP)])-2)
-  data1[,VoP:=VoP/max_vop]
-  scale_factor<-data1[,max(VoP,na.rm = T)/Scaler]
-  data1[,VoP:=round(VoP/scale_factor,0)]
-  MaxY<-data1[,list(Height=ceiling(sum(VoP)/NRows)),by=.(Region,Country,Crop)][,max(Height)]+1
-  data1<-data1[VoP>0]
+  max_value<-10^(nchar(data1[,max(value)])-2)
+  data1[,value:=value/max_value]
+  scale_factor<-data1[,max(value,na.rm = T)/Scaler]
+  data1[,value:=round(value/scale_factor,0)]
+  MaxY<-data1[,list(Height=ceiling(sum(value)/NRows)),by=.(Region,Country,Crop)][,max(Height)]+1
+  data1<-data1[value>0]
   
   # Data for plot 2
   ranks<-data[,sort(unique(Rank2))]
@@ -550,22 +603,22 @@ Waffler<-function(data,
   ranks<-ranks[1:Crop.N2]
   data2<-data[Rank2 %in% ranks]
   }
-  max_vop<-10^(nchar(data2[,max(VoP)])-2)
-  data2[,VoP:=VoP/max_vop]
-  scale_factor<-data2[,max(VoP,na.rm = T)/Scaler]
-  data2[,VoP:=round(VoP/scale_factor,0)]
-  data2<-data2[VoP>0]
+  max_value<-10^(nchar(data2[,max(value)])-2)
+  data2[,value:=value/max_value]
+  scale_factor<-data2[,max(value,na.rm = T)/Scaler]
+  data2[,value:=round(value/scale_factor,0)]
+  data2<-data2[value>0]
   
   # Data for plot 3
   data3<-copy(data)
   if(p3_unit=="Million"){
-  data3[,VoP:=VoP/10^6]
+  data3[,value:=value/10^6]
   }
   if(p3_unit=="Thousand"){
-  data3[,VoP:=VoP/10^3]
+  data3[,value:=value/10^3]
   }
   if(p3_unit=="Billion"){
-  data3[,VoP:=VoP/10^9]
+  data3[,value:=value/10^9]
   }
 
   # Legend Palettes
@@ -624,7 +677,7 @@ Waffler<-function(data,
   panel.grid.major.y = element_blank()
   )
   
-  crop_order<-data3[,.(VoP=sum(VoP,na.rm=T)),by=Crop][order(VoP,decreasing = T),Crop]
+  crop_order<-data3[,.(value=sum(value,na.rm=T)),by=Crop][order(value,decreasing = T),Crop]
 
   if(p3_order_val=="Yes"){
     data3$Crop <- factor(data3$Crop, levels = rev(crop_order))
@@ -637,12 +690,12 @@ Waffler<-function(data,
   data3<-data3[Crop %in% p3_crops]
   }
   
-  g3 <- ggplot(data3, aes(x = Crop, y = VoP, fill = Hazard)) +
+  g3 <- ggplot(data3, aes(x = Crop, y = value, fill = Hazard)) +
   geom_bar(stat = "identity", position =  position_stack(reverse = F), color = GridCol,width=1) +
   scale_fill_manual(values = HazardPalette3, drop = FALSE) +
   facet_grid(. ~ Admin, switch = "y", drop = FALSE,scales = p3_free) +
   theme_minimal() +
-  labs(x = NULL, y = paste0("Value of Production (",p3_unit," $I 2015)")) +
+  labs(x = NULL, y = spam_lab1) +
   gg_theme+
   scale_y_continuous(expand = c(0.003,0.01))+
   coord_flip()
@@ -669,7 +722,7 @@ Waffler<-function(data,
   panel.grid = element_blank()
   )
     
-  g2 <- ggplot(data2, aes(fill = Hazard, values = VoP)) +
+  g2 <- ggplot(data2, aes(fill = Hazard, values = value)) +
   waffle::geom_waffle(n_rows = NRows2, size = GridSpace, colour = GridCol, flip = FALSE) +
   scale_fill_manual(values = HazardPalette2, drop = FALSE) +
   scale_x_continuous(expand = c(0.005,0))+
@@ -698,7 +751,7 @@ Waffler<-function(data,
     
     Plot.Dat[,Crop:=factor(Crop,levels = unique(Plot.Dat[,.(Crop,Rank)])[order(as.numeric(Rank)),Crop])]
   
-  g<-ggplot(Plot.Dat,aes(fill = Hazard, values = VoP)) +
+  g<-ggplot(Plot.Dat,aes(fill = Hazard, values = value)) +
     expand_limits(x=c(0,0), y=c(0,0)) +
     coord_equal() +
     labs(fill = NULL, colour = NULL,title = REG) + 

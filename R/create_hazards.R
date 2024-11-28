@@ -31,7 +31,7 @@ PalFun<-function(PalName,N,Names) {
 
 # GCCMI crop calendars  ####
 # Function to convert Julian day to month
-convert_to_month <- function(julian_day) {
+convert_to_month <- function(julian_day,year) {
   julian_day<-as.numeric(julian_day)
   date <- as.Date(julian_day - 1, origin = paste0(year, "-01-01"))
   as.numeric(format(date, "%m"))  # Return numeric month
@@ -39,24 +39,19 @@ convert_to_month <- function(julian_day) {
 
   ## Rainfed  #####
   cc_maize_rf<-terra::rast("raw_data/gccmi/mai_rf_ggcmi_crop_calendar_phase3_v1.01.nc4")
-  # Resample to drought
-  cc_maize_rf<-terra::resample(cc_maize_rf,drought,method="near")
-  
+
   # Convert days to month
-  cc_maize_rf$planting_month<- app(cc_maize_rf$planting_day, convert_to_month)
-  cc_maize_rf$maturity_month<- app(cc_maize_rf$maturity_day, convert_to_month)
+  cc_maize_rf$planting_month<- convert_to_month(as.numeric(cc_maize_rf$planting_day[]),year=1980)
+  cc_maize_rf$maturity_month<- convert_to_month(as.numeric(cc_maize_rf$maturity_day[]),year=1980)
   # Optional: Add names for clarity
   names(cc_maize_rf$planting_month) <- "month"
   names(cc_maize_rf$maturity_month) <- "month"
   
   ## Irrigated ######
   cc_maize_ir<-terra::rast("raw_data/gccmi/mai_ir_ggcmi_crop_calendar_phase3_v1.01.nc4")
-  # Resample to drought
-  cc_maize_ir<-terra::resample(cc_maize_ir,drought,method="near")
-  
   # Convert days to month
-  cc_maize_ir$planting_month<- app(cc_maize_ir$planting_day, convert_to_month)
-  cc_maize_ir$maturity_month<- app(cc_maize_ir$maturity_day, convert_to_month)
+  cc_maize_ir$planting_month<-convert_to_month(as.numeric(cc_maize_ir$planting_day[]),year=1980)
+  cc_maize_ir$maturity_month<-convert_to_month(as.numeric(cc_maize_ir$maturity_day[]),year=1980)
   # Optional: Add names for clarity
   names(cc_maize_ir$planting_month) <- "month"
   names(cc_maize_ir$maturity_month) <- "month"
@@ -162,8 +157,11 @@ drought<-drought+0
 
   ## Summarize drought for cropping seasons ####
     ### Rainfed ######
-plant<-(cc_maize_rf$planting_month*3)-2
-harvest<-cc_maize_rf$maturity_month*3
+plant<-terra::resample(cc_maize_rf$planting_month,drought,method="near")
+harvest<-terra::resample(cc_maize_rf$maturity_month,drought,method="near")
+
+plant<-(plant$planting_month*3)-2
+harvest<-harvest$maturity_month*3
 # Where plant>harvest (e.g. plant = 11 harvest = 3) add 12 to harvest (e.g. plant = 11 harvest = 15)
 harvest[plant[]>harvest[]]<-harvest[plant[]>harvest[]]+36
 
@@ -197,8 +195,11 @@ d_fun<-function(x,threshold){
 drought_rf<-app(drought_yrs_rf,d_fun,threshold=1)
 
     ### Irrigated ######
-plant<-(cc_maize_ir$planting_month*3)-2
-harvest<-cc_maize_ir$maturity_month*3
+plant<-terra::resample(cc_maize_ir$planting_month,drought,method="near")
+harvest<-terra::resample(cc_maize_ir$maturity_month,drought,method="near")
+
+plant<-(plant$planting_month*3)-2
+harvest<-harvest$maturity_month*3
 # Where plant>harvest (e.g. plant = 11 harvest = 3) add 12 to harvest (e.g. plant = 11 harvest = 15)
 harvest[plant[]>harvest[]]<-harvest[plant[]>harvest[]]+36
 
@@ -423,7 +424,7 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
   names(ntx35_rf_freq)<-"ntx35_mod-haz-freq_rf-cc"
   plot(ntx35_rf_freq)
   
-# GAEZ - LGP #
+# GAEZ - LGP ####
   file<-list.files("raw_data/gaez/len-longest-component-LGP","rcp2p6_2050s",full.names = T)
   lgp_fut<-terra::rast(file)
   file<-list.files("raw_data/gaez/len-longest-component-LGP","Hist",full.names = T)
@@ -492,6 +493,7 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
   ## Combine hazards #####
     ### Rainfed ######
      haz_comb<-sum(c(var,flood,dry,heat_rf,gsr),na.rm=T)
+     freq(haz_comb)
     # Add labels
     haz_levels<-data.frame(
       data.table(expand.grid(var=c(0,1),flood=c(0,10),dry=c(0,100),heat=c(0,1000),gsr=c(0,10000)))[,.(value=var+dry+flood+heat+gsr)],
@@ -502,13 +504,16 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
                              gsr=c(NA,"r")))[,.(label=paste(na.omit(c(var,flood,dry,heat,gsr)),collapse = "+")),by=.(var,flood,dry,heat,gsr)][,"label"]
     )
     
+    haz_levels$new_val<-0:(nrow(haz_levels)-1)
     haz_levels$label[haz_levels$value==0]<-"none"
+    
+    haz_comb<-classify(haz_comb,data.frame(from=haz_levels$value,to=haz_levels$new_val))
+    haz_levels$value<-haz_levels$new_val
+    haz_levels$new_val<-NULL
     
     levels(haz_comb)<-haz_levels
     names(haz_comb)<-"combined hazards"
     
-    plot(c(haz_comb,var,flood,heat_rf,dry_rf,gsr))
-  
     # Improve palette
     color_map<-PalFun(PalName="turbo",N=nrow(haz_levels),Names = haz_levels$value)
     color_map<-data.frame(value=names(color_map),color=color_map)
@@ -524,29 +529,7 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
     haz_comb_f[,perc:=round(100*(count/sum(count)),1)]
     haz_comb_f
     
-    # Aggregrate small percentages
-    agg_names<-haz_comb_f[perc<2,value]
-    agg_vals<-data.table(levels(haz_comb)[[1]])[label %in% agg_names,value]      
-    haz_comb_agg<-classify(haz_comb,data.frame(from=agg_vals,to=999999))
-    hca_levels<-data.table(levels(haz_comb)[[1]])
-    hca_levels<-rbind(hca_levels,data.table(value=999999,label="other"))
-    levels(haz_comb_agg)<-hca_levels
-    names(haz_comb_agg)<-"combined hazards"
-    
-    # Create legend tables
-    used_vals<-freq(haz_comb_agg)$value
-    HazTab<-data.table(terra::levels(haz_comb_agg)[[1]])[label %in% used_vals]         
-    levels(haz_comb_agg)<-HazTab
-    
-    # Improve palette
-    color_map<-PalFun(PalName="turbo",N=nrow(hca_levels[label %in% used_vals]),Names = hca_levels[label %in% used_vals,value])
-    color_map<-data.frame(value=names(color_map),color=color_map)
-    color_map$color[1]<-NA
-    
-    # Assign the colormap to the raster
-    coltab(haz_comb_agg) <- as.matrix(color_map)
-    plot(haz_comb_agg)
-    
+    HazTab<-data.table(terra::levels(haz_comb)[[1]])
     colnames(HazTab)<-c("Code","ShortName")
     HazTab<-HazTab[,Hazard:=ShortName
     ][ShortName=="v",Hazard:="Rain variability (v)"
@@ -554,25 +537,12 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
     ][ShortName=="d",Hazard:="Drought (d)"
     ][ShortName=="h",Hazard:="Heat (h)"
     ][ShortName=="r",Hazard:="Reduced season (r)"]
-    
-    used_vals<-freq(haz_comb)$value
-    HazTab2<-data.table(terra::levels(haz_comb)[[1]])[label %in% used_vals]         
-    levels(haz_comb)<-HazTab2
-    colnames(HazTab2)<-c("Code","ShortName")
-    HazTab2<-HazTab2[,Hazard:=ShortName
-    ][ShortName=="v",Hazard:="Rain variability (v)"
-    ][ShortName=="f",Hazard:="Flood (f)"
-    ][ShortName=="d",Hazard:="Drought (d)"
-    ][ShortName=="h",Hazard:="Heat (h)"
-    ][ShortName=="r",Hazard:="Reduced season (r)"]
 
     
-      #### Save results ####
+    #### Save results ####
     terra::writeRaster(haz_comb,filename = "raw_data/haz_comb/haz_full_rf.tif",overwrite=T)
-    fwrite(HazTab2,"raw_data/haz_comb/haz_full_rf.csv")
+    fwrite(HazTab,"raw_data/haz_comb/haz_full_rf.csv")
     
-    terra::writeRaster(haz_comb_agg,filename = "raw_data/haz_comb/haz_agg_rf.tif",overwrite=T)
-    fwrite(HazTab,"raw_data/haz_comb/haz_agg_rf.csv")
     ### Irrigated ######
     haz_comb<-sum(c(flood,water_stress,heat_ir,gsr),na.rm=T)
     # Add labels
@@ -587,13 +557,15 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
                              gsr=c(NA,"r")))[,.(label=paste(na.omit(c(flood,waterstress,heat,gsr)),collapse = "+")),by=.(flood,waterstress,heat,gsr)][,"label"]
     )
     
+    haz_levels$new_val<-0:(nrow(haz_levels)-1)
     haz_levels$label[haz_levels$value==0]<-"none"
-    unique(values(haz_comb))
     
+    haz_comb<-classify(haz_comb,data.frame(from=haz_levels$value,to=haz_levels$new_val))
+    haz_levels$value<-haz_levels$new_val
+    haz_levels$new_val<-NULL
     levels(haz_comb)<-haz_levels
     names(haz_comb)<-"combined hazards"
-    
-    plot(c(haz_comb,flood,water_stress,heat_ir,gsr))
+    freq(haz_comb)
     
     # Improve palette
     color_map<-PalFun(PalName="turbo",N=nrow(haz_levels),Names = haz_levels$value)
@@ -602,7 +574,6 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
     
     # Assign the colormap to the raster
     coltab(haz_comb) <- as.matrix(color_map)
-    
     plot(haz_comb)  
     
     # Calc freq
@@ -610,29 +581,8 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
     haz_comb_f[,perc:=round(100*(count/sum(count)),1)]
     haz_comb_f
     
-    # Aggregrate small percentages
-    agg_names<-haz_comb_f[perc<2,value]
-    agg_vals<-data.table(levels(haz_comb)[[1]])[label %in% agg_names,value]      
-    haz_comb_agg<-classify(haz_comb,data.frame(from=agg_vals,to=999999))
-    hca_levels<-data.table(levels(haz_comb)[[1]])
-    hca_levels<-rbind(hca_levels,data.table(value=999999,label="other"))
-    levels(haz_comb_agg)<-hca_levels
-    names(haz_comb_agg)<-"combined hazards"
-    
-    # Create legend tables
-    used_vals<-freq(haz_comb_agg)$value
-    HazTab<-data.table(terra::levels(haz_comb_agg)[[1]])[label %in% used_vals]         
-    levels(haz_comb_agg)<-HazTab
-    
-    # Improve palette
-    color_map<-PalFun(PalName="turbo",N=nrow(hca_levels[label %in% used_vals]),Names = hca_levels[label %in% used_vals,value])
-    color_map<-data.frame(value=names(color_map),color=color_map)
-    color_map$color[1]<-NA
-    
-    # Assign the colormap to the raster
-    coltab(haz_comb_agg) <- as.matrix(color_map)
-    plot(haz_comb_agg)
-    
+    # Create table for legend
+    HazTab<-data.table(terra::levels(haz_comb)[[1]])     
     colnames(HazTab)<-c("Code","ShortName")
     HazTab<-HazTab[,Hazard:=ShortName
     ][ShortName=="r",Hazard:="Reduced season (r)"
@@ -640,21 +590,9 @@ drought_ir<-app(drought_yrs_ir,d_fun,threshold=1)
     ][ShortName=="ws",Hazard:="Water stress (ws)"
     ][ShortName=="h",Hazard:="Heat (h)"]
     
-    used_vals<-freq(haz_comb)$value
-    HazTab2<-data.table(terra::levels(haz_comb)[[1]])[label %in% used_vals]         
-    levels(haz_comb)<-HazTab2
-    colnames(HazTab2)<-c("Code","ShortName")
-    HazTab2<-HazTab2[,Hazard:=ShortName
-    ][ShortName=="r",Hazard:="Reduced season (r)"
-    ][ShortName=="f",Hazard:="Flood (f)"
-    ][ShortName=="ws",Hazard:="Water stress (ws)"
-    ][ShortName=="h",Hazard:="Heat (h)"]
-    
     # Save results ####
-    terra::writeRaster(haz_comb,filename = "raw_data/haz_comb/haz_full_ir.tif",overwrite=T)
-    fwrite(HazTab2,"raw_data/haz_comb/haz_full_ir.csv")
-    
-    terra::writeRaster(haz_comb_agg,filename = "raw_data/haz_comb/haz_agg_ir.tif",overwrite=T)
-    fwrite(HazTab,"raw_data/haz_comb/haz_agg_ir.csv")
-    
+    save_file<-"raw_data/haz_comb/haz_full_ir.tif"
+    terra::writeRaster(haz_comb,filename =save_file,overwrite=T)
+    fwrite(HazTab,"raw_data/haz_comb/haz_full_ir.csv")
+    check<-rast(save_file)
     

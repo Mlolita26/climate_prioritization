@@ -50,121 +50,130 @@ terra::writeVector(cgiar_countries,country_file,overwrite=T)
   ## 1.1) Set Base raster #####
   base_rast<-terra::rast("raw_data/haz_comb/haz_agg_rf.tif")
   ## 1.2) Resample SPAM #####
-  spam_techs<-c("r","i","a")
-  spam_ssa_path<-"raw_data/SPAM/ssa_crop_vop15_intd15_"
-  spam_global_path<-"raw_data/SPAM/global_crop_vop15_int15_"
-  spam_files<-apply(expand.grid(c(spam_ssa_path,spam_global_path),spam_techs,".tif"),1,FUN=paste,collapse="")
 
+  ms_codes<-data.table::fread( "https://raw.githubusercontent.com/AdaptationAtlas/hazards_prototype/main/metadata/SpamCodes.csv", showProgress = FALSE)[,Code:=toupper(Code)]
+  ms_codes<-ms_codes[compound=="no"]
+
+  spam_techs<-c("r","i","a")
+  spam_variables<-c("crop_vop15_intd15","crop_H")
   overwrite<-F
-  for(i in 1:length(spam_files)){
-    cat(i,"/",length(spam_files),"\n")
-    file_new<-gsub(".tif","_rs.tif",spam_files[i])
-    if(!file.exists(file_new)|overwrite==T){
-    spam_dat<-terra::rast(spam_files[i])
-    
-    cs<-cellSize(spam_dat,unit="km")
-    spam_dat_d<-spam_dat/cs
-    if(grepl("global",file_new)){
-      spam_dat_d<-terra::resample(spam_dat_d,base_rast,method="near")
-    }else{
-      spam_dat_d<-terra::resample(spam_dat_d,base_rast,method="bilinear")
+  
+  for(variable in spam_variables){
+    spam_ssa_path<-paste0("raw_data/SPAM/SSA_",variable,"_")
+    spam_global_path<-paste0("raw_data/SPAM/global_",variable,"_")
+    spam_files<-apply(expand.grid(c(spam_ssa_path,spam_global_path),spam_techs,".tif"),1,FUN=paste,collapse="")
+  
+    for(i in 1:length(spam_files)){
+      cat(variable,"-",i,"/",length(spam_files),"\n")
+      file_new<-gsub(".tif","_rs.tif",spam_files[i])
+      if(!file.exists(file_new)|overwrite==T){
+      spam_dat<-terra::rast(spam_files[i])
+      
+      cs<-cellSize(spam_dat,unit="km")
+      spam_dat_d<-spam_dat/cs
+      if(grepl("global",file_new)){
+        spam_dat_d<-terra::resample(spam_dat_d,base_rast,method="near")
+      }else{
+        spam_dat_d<-terra::resample(spam_dat_d,base_rast,method="bilinear")
+      }
+      spam_dat<-spam_dat_d*cellSize(spam_dat_d,unit="km")
+      
+      terra::writeRaster(spam_dat,filename=file_new,overwrite=T)
+      }
     }
-    spam_dat<-spam_dat_d*cellSize(spam_dat_d,unit="km")
     
-    terra::writeRaster(spam_dat,filename=file_new,overwrite=T)
+    # Combine spam global and spam africa #####
+    spam_comb_path<-gsub("global","comb",spam_global_path)
+    for(tech in spam_techs){
+      cat(variable,"-combining ssa & global - tech = ",tech,"\n")
+      
+      save_path<-paste0(spam_comb_path,tech,"_rs.tif")
+      if(!file.exists(save_path)|overwrite){
+        # Load mapspam data
+        spam_africa<-terra::rast(paste0(spam_ssa_path,tech,"_rs.tif"))+0
+        spam_global<-terra::rast(paste0(spam_global_path,tech,"_rs.tif"))+0
+        if("BANA" %in% names(spam_global)){
+          names(spam_global)<-ms_codes[match(names(spam_global),Code),Fullname]
+        }
+        
+        crops<-names(spam_africa)
+        crops<-crops[crops %in% names(spam_global)]
+        
+        spam_combined <-rast(lapply(crops, FUN = function(crop) {
+          cat(crop)
+          a <- spam_global[[crop]]
+          b <- spam_africa[[crop]]
+          a[!is.na(values(b))] <- values(b)[!is.na(values(b))]
+          a
+        }))
+        cat("\n")
+        
+        writeRaster(spam_combined,save_path)
+      }
     }
-  }
+    if(F){
+      # Check results
+      
+      a<-terra::rast(paste0(spam_comb_path,"a_rs.tif"))
+      i<-terra::rast(paste0(spam_comb_path,"i_rs.tif"))
+      r<-terra::rast(paste0(spam_comb_path,"r_rs.tif"))
+      
+      crop<-"arabica coffee"
+      crop<-"soybean"
+      
+      a<-a[crop]
+      i<-i[crop]
+      r<-r[crop]
+      
+      # i + r should be virtually the same as a
+      plot(a-sum(c(i,r),na.rm=T))
+      
+      admin<-"LAC"
+      v<-cgiar_regions[cgiar_regions$CG_REG==admin,]
+      a<-crop(mask(a,v),v)
+      i<-crop(mask(i,v),v)
+      r<-crop(mask(r,v),v)
+      plot(c(a,sum(c(i,r),na.rm=T)))
+    }
+    }
+  
   
   ## 1.3) Rasterize geographies #####
   Regions_rast<-lapply(1:length(cgiar_regions),FUN=function(i){terra::rasterize(cgiar_regions[i],base_rast,field="CG_REG")})
   names(Regions_rast)<-cgiar_regions$CG_REG
   Countries_rast<-terra::rasterize(cgiar_countries,base_rast,field="ADMIN")
-  
-  countries<-data.table(levels(Countries_rast)[[1]])
-  country_list<-pblapply(1:nrow(countries),FUN=function(i){
-    a<-Countries_rast
-    value<-countries[i,ID]
-    a[values(a)!=value]<-NA
-    return(a)
-  })
-  names(country_list)<-countries$ADMIN
-  
-  ## 1.4) Combine spam global and spam africa #####
-  overwrite<-F
-  spam_comb_path<-gsub("global","comb",spam_global_path)
-  for(tech in spam_techs){
-    save_path<-paste0(spam_comb_path,tech,"_rs.tif")
-    if(!file.exists(save_path)|overwrite){
-    # Load mapspam data
-    spam_africa<-terra::rast(paste0(spam_ssa_path,tech,"_rs.tif"))+0
-    spam_global<-terra::rast(paste0(spam_global_path,tech,"_rs.tif"))+0
-    if("BANA" %in% names(spam_global)){
-      names(spam_global)<-ms_codes[match(names(spam_global),Code),Fullname]
-    }
-    
-    crops<-names(spam_africa)
-    crops<-crops[crops %in% names(spam_global)]
-    
-    spam_combined <-rast(lapply(crops, FUN = function(crop) {
-        cat(crop,"\n")
-        a <- spam_global[[crop]]
-        b <- spam_africa[[crop]]
-        a[!is.na(values(b))] <- values(b)[!is.na(values(b))]
-        a
-      }))
-
-    writeRaster(spam_combined,save_path)
-    }
-  }
-    
-  if(F){
-    # Check results
-
-    a<-terra::rast(paste0(spam_comb_path,"a_rs.tif"))
-    i<-terra::rast(paste0(spam_comb_path,"i_rs.tif"))
-    r<-terra::rast(paste0(spam_comb_path,"r_rs.tif"))
-    
-    crop<-"arabica coffee"
-    crop<-"soybean"
-    
-    a<-a[crop]
-    i<-i[crop]
-    r<-r[crop]
-    
-    # i + r should be virtually the same as a
-    plot(a-sum(c(i,r),na.rm=T))
-  
-    admin<-"LAC"
-    v<-cgiar_regions[cgiar_regions$CG_REG==admin,]
-    a<-crop(mask(a,v),v)
-    i<-crop(mask(i,v),v)
-    r<-crop(mask(r,v),v)
-    plot(c(a,sum(c(i,r),na.rm=T)))
-  }
 
 # 2) Extract VoP ####
-for(tech in spam_techs){
-  ## Load mapspam data #####
-  spam_combined<-terra::rast(paste0(spam_comb_path,tech,"_rs.tif"))
-
-  # Regions
-  region_spam<-data.table(rbindlist(pblapply(1:length(Regions_rast),FUN=function(k){
-    zonal(spam_combined,Regions_rast[[k]],fun="sum",na.rm=T)
-  })))
-  setnames(region_spam,"CG_REG","Region")
-  region_spam<-data.table::melt(region_spam,id.vars = "Region",value.name = "VoP",variable.name = "Crop")
-
-  # Countries
-  country_spam<-data.table(zonal(spam_combined,Countries_rast,fun="sum",na.rm=T))
-  setnames(country_spam,c("ADMIN"),c("Country"))
-  country_spam<-data.table::melt(country_spam,id.vars = c("Country"),value.name = "VoP",variable.name = "Crop")
-  country_spam<-merge(country_spam,data.frame(cgiar_countries),by.x="Country",by.y="ADMIN",all.x=T)
-  # Save results
-  spam<-rbindlist(list(region_spam,country_spam),fill=T)
-  fwrite(spam,file=file.path("raw_data/SPAM",paste0("SPAMextracted_",tech,".csv")))
+  for(variable in spam_variables){
+    spam_comb_path<-paste0("raw_data/SPAM/comb_",variable,"_")
+    
+    for(tech in spam_techs){
+      cat(variable,"-",tech,"\n")
+      save_file<-file.path("raw_data/SPAM",paste0("SPAMextracted_",variable,"_",tech,".csv"))
+      if(!file.exists(save_file)|overwrite){
+      ## Load mapspam data #####
+      spam_combined<-terra::rast(paste0(spam_comb_path,tech,"_rs.tif"))
+    
+      # Regions
+      region_spam<-data.table(rbindlist(pblapply(1:length(Regions_rast),FUN=function(k){
+        zonal(spam_combined,Regions_rast[[k]],fun="sum",na.rm=T)
+      })))
+      setnames(region_spam,"CG_REG","Region")
+      region_spam<-data.table::melt(region_spam,id.vars = "Region",value.name = "VoP",variable.name = "Crop")
+    
+      # Countries
+      country_spam<-data.table(zonal(spam_combined,Countries_rast,fun="sum",na.rm=T))
+      setnames(country_spam,c("ADMIN"),c("Country"))
+      country_spam<-data.table::melt(country_spam,id.vars = c("Country"),value.name = "VoP",variable.name = "Crop")
+      country_spam<-merge(country_spam,data.frame(cgiar_countries),by.x="Country",by.y="ADMIN",all.x=T)
+      # Save results
+      spam<-rbindlist(list(region_spam,country_spam),fill=T)
+      fwrite(spam,file=save_file)
+      }
+    }
 }
 
-## 2.1) Check results #####
+  ## 2.1) Check results #####
 spam_i<-fread("raw_data/SPAM/SPAMextracted_i.csv")
 spam_r<-fread("raw_data/SPAM/SPAMextracted_r.csv")
 spam_a<-fread("raw_data/SPAM/SPAMextracted_a.csv")
@@ -184,35 +193,37 @@ spam_r[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
 spam_a[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
 
 
-# 3) Prepare Hazards Data ####
+# 3) Extract VoP x Hazards ####
   hazard_layers<-data.table(file=c("raw_data/haz_comb/haz_full_rf.tif",
                                    "raw_data/haz_comb/haz_full_ir.tif"),
                             legend=c('raw_data/haz_comb/haz_full_rf.csv',
                                      'raw_data/haz_comb/haz_full_ir.csv'))
   hazard_layers[,file_n:=c("rf","ir")][,irrigated:=c(F,T)]
   
+  overwrite<-F
   
+  for(variable in spam_variables){
+    var<-if(variable=="crop_H"){"ha"}else{"vop"}
+    spam_comb_path<-paste0("raw_data/SPAM/comb_",variable,"_")
   for(i in 1:nrow(hazard_layers)){
-    cat(i,"/",nrow(hazard_layers))
+    cat("variable",var,"| tech",i,"/",nrow(hazard_layers),"\n")
     haz_choice<-hazard_layers$file_n[i]
     irrigated<-hazard_layers[i,irrigated]
-  
-  haz_vop_file<-paste0("raw_data/haz_comb/hazard_",haz_choice,"_vop_admin.parquet")
+    
+  haz_ex_file<-paste0("raw_data/haz_comb/hazard_",haz_choice,"_",var,"_admin.parquet")
   hazard_file<-hazard_layers[file_n==haz_choice,file]
   HazTab<-fread(hazard_layers[file_n==haz_choice,legend])
   
+  if(!file.exists(haz_ex_file)|overwrite){
   ## Load hazard layer #####
   Hazard<- terra::rast(hazard_file)
   Hazard[is.na(Hazard[])]<-0
-  HazardCrop<-terra::rast(hazard_file)
   
   ## Load mapspam #####
   if(irrigated==F){
     spam_file<-paste0(spam_comb_path,"r_rs.tif")
-    SPAMbyRegion<-fread("raw_data/SPAM/SPAMextracted_r.csv")
   }else{
     spam_file<-paste0(spam_comb_path,"i_rs.tif")
-    SPAMbyRegion<-fread("raw_data/SPAM/SPAMextracted_i.csv")
   }
   
   spam<-terra::rast(spam_file)
@@ -231,11 +242,11 @@ spam_a[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
       # Take one crop
       cr1 <- SPAM[[k]]
       
-      ex<-data.table(VoP=cr1[],Code=as.numeric(values(Haz)))
-      colnames(ex)[1]<-"VoP"
+      ex<-data.table(value=cr1[],Code=as.numeric(values(Haz)))
+      colnames(ex)[1]<-"value"
       ex<-merge(ex,HazTab,by="Code",all.x=T)
       ex[is.na(Hazard),Hazard:="none"]
-      ex<-ex[,list(VoP=sum(VoP,na.rm = T)),by=list(Hazard)
+      ex<-ex[,list(value=sum(value,na.rm = T)),by=list(Hazard)
       ][,Crop:=names(cr1)]
       ex
     }))
@@ -247,46 +258,53 @@ spam_a[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
     dff
   }))
   
-  Data[,VoP_total_crop:=sum(VoP,na.rm=T),by=.(Region,Country,Crop)
-  ][,VoP_total:=sum(VoP,na.rm=T),by=.(Region,Country)
-  ][,VoP_perc_total:=round(100*VoP/VoP_total,2)
-  ][,VoP:=round(VoP,0)
-  ][,VoP_total_crop:=round(VoP_total_crop,0)
-  ][,VoP_perc_total:=round(VoP_perc_total,0)]
+  Data[,val_total_crop:=sum(value,na.rm=T),by=.(Region,Country,Crop)
+  ][,val_total:=sum(value,na.rm=T),by=.(Region,Country)
+  ][,val_perc_total:=round(100*value/val_total,2)
+  ][,value:=round(value,0)
+  ][,val_total_crop:=round(val_total_crop,0)
+  ][,val_perc_total:=round(val_perc_total,0)]
   
   Data[,Admin:=Country][Admin=="",Admin:=Region]
   
-  arrow::write_parquet(Data,haz_vop_file)
+  arrow::write_parquet(Data,haz_ex_file)
+  }
   }
     
-# 4) Combine Rainfed and Irrigated ####
-  files<-list.files("raw_data/haz_comb","vop_admin",full.names = T)
+  ## Combine Rainfed and Irrigated ####
+  files<-list.files("raw_data/haz_comb",paste0(var,"_admin"),full.names = T)
   
   # All hazards rainfed
-  a<-arrow::read_parquet(files[1])
+  a<-arrow::read_parquet(grep("_ir_",files,value=T))
   # All hazards irrigated
-  b<-arrow::read_parquet(files[2])
+  b<-arrow::read_parquet(grep("_rf_",files,value=T))
   
+  if(F){
   # Check data
   crop<-"rice"
   region<-"SEA"
-  a[Region==region & is.na(Country) & Crop==crop,sum(VoP)]
-  b[Region==region & is.na(Country) & Crop==crop,sum(VoP)]
+  a[Region==region & is.na(Country) & Crop==crop,sum(value)]
+  b[Region==region & is.na(Country) & Crop==crop,sum(value)]
   
   region<-"SA"
-  a[Region==region & is.na(Country) & Crop==crop,sum(VoP)]
-  b[Region==region & is.na(Country) & Crop==crop,sum(VoP)]
+  a[Region==region & is.na(Country) & Crop==crop,sum(value)]
+  b[Region==region & is.na(Country) & Crop==crop,sum(value)]
+  }
   
   ab<-rbind(a,b)[order(Region,Country,Crop,Hazard)]
   ab[Hazard=="No hazard",Hazard:="none"]
-  ab<-ab[,.(VoP=sum(VoP)),by=.(Region,Country,Crop,Hazard,Admin)]
-  ab[,VoP_tot_crop:=sum(VoP),by=.(Region,Country,Crop)]
-  ab[,VoP_tot:=sum(VoP),by=.(Region,Country)]
+  ab<-ab[,.(value=sum(value)),by=.(Region,Country,Crop,Hazard,Admin)]
+  ab[,value_tot_crop:=sum(value),by=.(Region,Country,Crop)]
+  ab[,value_tot:=sum(value),by=.(Region,Country)]
   
-  ab[,Admin:=Region][!is.na(Country),Admin:=Country]
+  ab[,Admin:=Region][!is.na(Country),Admin:=Country][,variable:=var]
 
-  arrow::write_parquet(ab,"Data/hazard_vop_admin.parquet")
-  
-  
+  arrow::write_parquet(ab,paste0("raw_data/haz_comb/hazard_",var,"_comb_admin.parquet"))
+  }
 
+  # Merge spam variables
+  files<-list.files("raw_data/haz_comb","comb_admin.parquet$",full.names = T)
+  
+  dat<-rbindlist(lapply(files,arrow::read_parquet))
+  arrow::write_parquet(dat,"Data/hazard_ex_admin.parquet")
     
