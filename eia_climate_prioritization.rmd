@@ -988,7 +988,7 @@ Each hazard was classified into two categories (presence or absence) based on pr
   - **Data**: Mean CV of annual rainfall calculated for 2010–2023 [@chirps_article].  
   - **Threshold**:  
     - CV ≤ 20%: No significant rainfall variability.  
-    - CV > 20%: Presence of significant rainfall variability (classified as "variability present").  
+    - CV > 20%: Presence of moderate or higher rainfall variability (classified as "variability present").  
 
 - **Flood Hazard (JRC 20-Year Return Period)**  
   - **Description**: Indicates depth of inundation during a significant flood event expected once every 20 years. A binary classification highlights whether any risk is present.  
@@ -998,24 +998,24 @@ Each hazard was classified into two categories (presence or absence) based on pr
     - Value > 0 cm: Presence of flood hazard.  
 
 - **Drought Risk (Global Drought Observatory)**  
-  - **Description**: Derived from a drought severity index calculated using remote sensing data. The index measures soil moisture anomalies, with values >1 indicating severe moisture deficits [@gdo_article; @gdo_data].  
+  - **Description**: Derived from a drought severity index calculated using remote sensing data. The index measures soil moisture anomalies. [@gdo_article; @gdo_data].  
   - **Threshold**:  
     - Index ≤ 1: No significant drought risk.  
-    - Index > 1: Presence of significant drought risk.  
+    - Index > 1: Presence of medium or higher drought risk.  
   - **Details**: Drought risk was extracted for rainfed and irrigated crop calendars to align with growing seasons.  
 
 - **Heat Stress (AgERA5)**  
   - **Description**: Represents the seasonal frequency of moderate or higher heat stress, where moderate stress is defined as >10 extreme heat days per month (temperature >35°C) [@agera5_data; @agera5_cat].  
   - **Temporal Resolution**: Monthly data.  
   - **Calculation**:  
-    - For each cropping season, the frequency of months with moderate or higher heat stress was calculated.  
-    - If the seasonal frequency exceeded 0.2 (indicating a 1 in 5 chance of experiencing heat stress), the area was classified as having significant heat stress.  
+    - For each cropping season, the mean monthly heat stress days were calculated and classified according the 10 day threshold. The proportion of seasons with heat hazards present was calculated across the timeseries.   
+    - If the timeseries proportion exceeded 0.2 (indicating a 1 in 5 chance of experiencing heat stress), the area was classified as having significant heat stress.  
   - **Threshold**:  
     - Seasonal Frequency ≤ 0.2: No heat hazard.  
     - Seasonal Frequency > 0.2: Heat hazard present.  
 
 - **Growing Season Reduction (GAEZ)**  
-  - **Description**: Compares the length of growing periods (LGP) under future climate scenarios to historical baselines [@gaez_data; @gaez_methods].  
+  - **Description**: The percentage change in the length of growing periods (LGP) under future climate scenario (rcp 2.6 2050) to historical baselines was calculated [@gaez_data; @gaez_methods].  
   - **Threshold**:  
     - Reduction < 10%: No significant reduction.  
     - Reduction ≥ 10%: Significant reduction.  
