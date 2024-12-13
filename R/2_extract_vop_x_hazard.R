@@ -1,16 +1,66 @@
+# First run R/download_process_hazards.R
+# 0) Install and load packages ####
 if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
-
 p_load(data.table,terra,wbstats,pbapply,install = T)
 
-# Use the isciences version and not the CRAN version of exactextractr
-if(!require("exactextractr")){
-  remotes::install_github("isciences/exactextractr")
-}
-
-# 1) Prepare Boundaries ####
-cgiar_countries <- terra::vect('raw_data/CGIAR_countries_simplified.geojson')
-region_file<-"raw_data/regions.geojson"
-country_file<-"raw_data/countries.geojson"
+  ## 0.1) Download datasets ####
+    ### 0.1.1) Set s3 bucket #####
+    bucket_name_s3<-"s3://digital-atlas"
+    s3<-s3fs::S3FileSystem$new(anonymous = T)
+    
+    ### 0.1.2) MapSPAM #####
+    # These data come from IFPRI and the Africa Agricultural Adaptation Atlas
+    # spam2020V1r0
+    # https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/SWPENT
+    # IFPRI data processing
+      # https://github.com/AdaptationAtlas/hazards_prototype/blob/main/R/misc/mapspam_2020_vop.R
+    # SPAM SSA data processing - 2020V1r2_SSA
+      # https://github.com/AdaptationAtlas/hazards_prototype/blob/main/R/0.45_create_crop_vop.R
+      # https://github.com/AdaptationAtlas/hazards_prototype/blob/main/R/0.6_process_exposure.R
+    
+    local_dir<-"raw_data/SPAM"
+    if(!dir.exists(local_dir)){
+      dir.create(local_dir)
+    }
+    
+    s3_bucket <-"s3://digital-atlas/exposure/mapspam/eia_climate_prioritization"
+    
+    # List files in the specified S3 bucket and prefix
+    files_s3<-s3$dir_ls(s3_bucket)
+    files_local<-file.path(local_dir,basename(files_s3))
+    
+    # If data does not exist locally download from S3 bucket
+    for(i in 1:length(files_local)){
+      file<-files_local[i]
+      if(!file.exists(file)){
+        s3$file_download(files_s3[i],file)
+      }
+    }
+    
+    ### 0.1.3) Boundaries #####
+    local_dir<-"raw_data/boundaries"
+    if(!dir.exists(local_dir)){
+      dir.create(local_dir)
+    }
+    
+    s3_bucket <-"s3://digital-atlas/boundaries/eia_climate_prioritization"
+    
+    # List files in the specified S3 bucket and prefix
+    files_s3<-s3$dir_ls(s3_bucket)
+    files_local<-file.path(local_dir,basename(files_s3))
+    
+    # If data does not exist locally download from S3 bucket
+    for(i in 1:length(files_local)){
+      file<-files_local[i]
+      if(!file.exists(file)){
+        s3$file_download(files_s3[i],file)
+      }
+    }
+    
+# 1) Prepare boundaries ####
+cgiar_countries <- terra::vect('raw_data/boundaries/CGIAR_countries_simplified.geojson')
+region_file<-"raw_data/boundaries/regions.geojson"
+country_file<-"raw_data/boundaries/countries.geojson"
 
 # Remove high income countries from regions
 # Retrieve country information
@@ -47,9 +97,9 @@ cgiar_countries$region <- region_info$region
 terra::writeVector(cgiar_regions,region_file,overwrite=T)
 terra::writeVector(cgiar_countries,country_file,overwrite=T)
 
-  ## 1.1) Set Base raster #####
+# 2) Set Base raster #####
   base_rast<-terra::rast("raw_data/haz_comb/haz_agg_rf.tif")
-  ## 1.2) Resample SPAM #####
+# 3) Resample SPAM #####
 
   ms_codes<-data.table::fread( "https://raw.githubusercontent.com/AdaptationAtlas/hazards_prototype/main/metadata/SpamCodes.csv", showProgress = FALSE)[,Code:=toupper(Code)]
   ms_codes<-ms_codes[compound=="no"]
@@ -138,12 +188,12 @@ terra::writeVector(cgiar_countries,country_file,overwrite=T)
     }
   
   
-  ## 1.3) Rasterize geographies #####
+# 4) Rasterize geographies #####
   Regions_rast<-lapply(1:length(cgiar_regions),FUN=function(i){terra::rasterize(cgiar_regions[i],base_rast,field="CG_REG")})
   names(Regions_rast)<-cgiar_regions$CG_REG
   Countries_rast<-terra::rasterize(cgiar_countries,base_rast,field="ADMIN")
 
-# 2) Extract VoP ####
+# 5) Extract VoP ####
   for(variable in spam_variables){
     spam_comb_path<-paste0("raw_data/SPAM/comb_",variable,"_")
     
@@ -173,7 +223,7 @@ terra::writeVector(cgiar_countries,country_file,overwrite=T)
     }
 }
 
-  ## 2.1) Check results #####
+  ## 5.1) Check results #####
 spam_i<-fread("raw_data/SPAM/SPAMextracted_i.csv")
 spam_r<-fread("raw_data/SPAM/SPAMextracted_r.csv")
 spam_a<-fread("raw_data/SPAM/SPAMextracted_a.csv")
@@ -193,7 +243,7 @@ spam_r[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
 spam_a[Region==admin & Country=="" & grepl(crop,Crop),sum(VoP)]
 
 
-# 3) Extract VoP x Hazards ####
+# 6) Extract VoP x Hazards ####
   hazard_layers<-data.table(file=c("raw_data/haz_comb/haz_full_rf.tif",
                                    "raw_data/haz_comb/haz_full_ir.tif"),
                             legend=c('raw_data/haz_comb/haz_full_rf.csv',
