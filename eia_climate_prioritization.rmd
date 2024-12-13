@@ -1,11 +1,10 @@
 ---
-title: "EiA Prioritization"
-author: "Peter Steward"
-date: "1/4/2022"
+title: "CGIAR EiA Climate Adaptation Prioritization Tool"
+author: "Peter Steward, Harold Achicanoy, Todd Rosenstock, Brayden Youngberg, and Petra Schimitter"
 output: html_document
+bibliography: references/refs.bib
 runtime: shiny
 ---
-  
 <style type="text/css">
 .main-container {
 max-width: 1800px;
@@ -15,9 +14,6 @@ margin-right: auto;
 </style>
 
 ```{r setup, include=FALSE}
-# Please run getwd() in the console to get the project location and copy into the line below
-#root.dir<-"/Users/pstewarda/Library/CloudStorage/OneDrive-CGIAR/Projects/EiA/Climate Prioritization"
-#knitr::opts_knit$set(root.dir = root.dir)
 knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 999)
 ```
@@ -77,7 +73,7 @@ return(PAL)
 }
 ```
 
-## EiA Spatial Prioritization  {.tabset .tabset-fade .tabset-pills}
+## {.tabset .tabset-fade .tabset-pills}
 
 ```{r load mapspam, echo =F}
 haz_ex_file<-"Data/hazard_ex_admin.parquet"
@@ -95,8 +91,49 @@ if(!dir.exists(PlotDir)){
 }
 
 ```
+### Introduction
 
-### WafflePlot
+This interactive Markdown document is designed to support the prioritization of climate adaptation investments at the regional level for CGIAR science programs. It accompanies a publication and provides an interactive interface for exploring the intersection of climate hazards and agricultural exposure. The primary goal is to aid decision-makers in identifying and prioritizing regions and crops most vulnerable to climate risks.
+
+In addition to its specific application for CGIAR programs, this codebase is built to be fully repeatable and customizable, enabling adaptation for other purposes or regions. By incorporating flexible input datasets and scalable hazard combinations, the tool is suited to a wide range of agricultural and environmental risk assessments.
+
+#### Structure of the Interactive Tool
+
+This document consists of three main sections:
+
+1. **Hazard Exposure Visualization**  
+   This section provides an interactive visualization of climate hazards and their overlap with agricultural exposure. Users can explore the contributions of individual hazards to total exposure across crops and regions through customizable visualizations.
+
+2. **Datasets**  
+   This section lists all datasets used in the analysis, including a brief description, source information, variables included, resolution, and temporal coverage.
+
+3. **Methods**  
+   This section provides a detailed explanation of the methodology used to process climate hazard data, classify them into binary risk categories, and combine them with agricultural exposure data for analysis.
+
+The tool empowers users to dynamically adjust parameters, such as the selection of crops, regions, or hazard thresholds, providing a customizable framework for climate risk analysis.
+
+---
+
+#### Acknowledgments
+
+This work was funded by the CGIAR Excellence in Agronomy Initiative as part of the climate add-on led by Dr Petra Schmitter. The concept for this work is lead by Dr Todd Rosenstock (Climate Action, Alliance of Bioversity International and CIAT (ABC)). The development of this script is led by Dr Peter Steward & Brayden Youngberg (Climate Action, ABC). Harold Achicanoy (Climate Action, ABC) contributed the CHIRPS rainfall CV and AgERA5 heat stress climate datasets.
+
+If you are interested in Africa-specific hazard x exposure x vulnerability/adaptive capacity spatial prioritization data and potential solutions to mitigate climate risks, please visit the [Africa Agricultural Adaptation Atlas (AAAA)](https://adaptationatlas.cgiar.org/).
+
+#### Contact
+
+For questions or further information, please contact:  
+- Peter Steward: [p.steward@cgiar.org](mailto:p.steward@cgiar.org)  
+- Brayden Youngberg: [b.youngberg@cgiar.org](mailto:b.youngberg@cgiar.org)  
+- Todd Rosenstock: [t.rosenstock@cgiar.org](mailto:t.rosenstock@cgiar.org)
+
+<div style="text-align: center; margin-top: 30px;">
+  <img src="logos/abc.png" alt="Logo 1" height="100" style="margin: 10px;">
+  <img src="logos/eia.png" alt="Logo 2" height="100" style="margin: 10px;">
+  <img src="logos/cgiar.jpeg" alt="Logo 3" height="100" style="margin: 10px;">
+</div>
+
+### Hazard Exposure Visualization
 :::: {style="display: flex;"}
 ::: {}
 ```{r Choose variable,echo=F}
@@ -914,12 +951,11 @@ reactive({
 })
 ```
 
-
-#### Data used the waffle plot:
+#### Data used in the waffle plot
 ```{r Show Data,echo=F}
 renderDT({
   datatable(Data[,!c("Admin","Label","Rank","Rank2")][,Unit:=paste("I$ 2015")],
-            caption="Plot data by crop x region x hazard",
+            caption="Crop hazard frequency x exposure data.",
             extensions = 'Buttons',
             filter = "top",
             options = list(dom = 'Blfrtip',
@@ -929,3 +965,108 @@ renderDT({
 })
 ```
 
+
+
+<div style="text-align: center; margin-top: 30px;">
+  <img src="logos/abc.png" alt="Logo 1" height="100" style="margin: 10px;">
+  <img src="logos/eia.png" alt="Logo 2" height="100" style="margin: 10px;">
+  <img src="logos/cgiar.jpeg" alt="Logo 3" height="100" style="margin: 10px;">
+</div>
+
+### Methods
+
+#### Overview
+
+This section outlines the processing and analysis methods, including hazard classification, integration with crop exposure data, and how thresholds were applied to generate binary classifications for the final analysis.
+
+#### Hazard Classification
+
+Each hazard was classified into two categories (presence or absence) based on predefined thresholds derived from processed data. Hazards were extracted specifically for rainfed or irrigated crop calendars to align with seasonal agricultural activities.
+
+- **Rainfall Variability (CHIRPS)**  
+  - **Description**: Coefficient of Variation (CV) measures the ratio of standard deviation to mean rainfall. It indicates how consistently rainfall is distributed over time, with higher values suggesting greater variability.  
+  - **Data**: Mean CV of annual rainfall calculated for 2010–2023 [@chirps_article].  
+  - **Threshold**:  
+    - CV ≤ 20%: No significant rainfall variability.  
+    - CV > 20%: Presence of significant rainfall variability (classified as "variability present").  
+
+- **Flood Hazard (JRC 20-Year Return Period)**  
+  - **Description**: Indicates depth of inundation during a significant flood event expected once every 20 years. A binary classification highlights whether any risk is present.  
+  - **Data**: Flood hazard data derived from the JRC Global Flood Hazard Map [@flood_risk_data; @flood_risk_article].  
+  - **Threshold**:  
+    - Value = 0 cm: No flood hazard.  
+    - Value > 0 cm: Presence of flood hazard.  
+
+- **Drought Risk (Global Drought Observatory)**  
+  - **Description**: Derived from a drought severity index calculated using remote sensing data. The index measures soil moisture anomalies, with values >1 indicating severe moisture deficits [@gdo_article; @gdo_data].  
+  - **Threshold**:  
+    - Index ≤ 1: No significant drought risk.  
+    - Index > 1: Presence of significant drought risk.  
+  - **Details**: Drought risk was extracted for rainfed and irrigated crop calendars to align with growing seasons.  
+
+- **Heat Stress (AgERA5)**  
+  - **Description**: Represents the seasonal frequency of moderate or higher heat stress, where moderate stress is defined as >10 extreme heat days per month (temperature >35°C) [@agera5_data; @agera5_cat].  
+  - **Temporal Resolution**: Monthly data.  
+  - **Calculation**:  
+    - For each cropping season, the frequency of months with moderate or higher heat stress was calculated.  
+    - If the seasonal frequency exceeded 0.2 (indicating a 1 in 5 chance of experiencing heat stress), the area was classified as having significant heat stress.  
+  - **Threshold**:  
+    - Seasonal Frequency ≤ 0.2: No heat hazard.  
+    - Seasonal Frequency > 0.2: Heat hazard present.  
+
+- **Growing Season Reduction (GAEZ)**  
+  - **Description**: Compares the length of growing periods (LGP) under future climate scenarios to historical baselines [@gaez_data; @gaez_methods].  
+  - **Threshold**:  
+    - Reduction < 10%: No significant reduction.  
+    - Reduction ≥ 10%: Significant reduction.  
+
+#### SPAM Exposure Data
+
+- **Global SPAM (IFPRI)**:  
+  - A global spatial production allocation model providing estimates of crop-specific production and harvested area [@mapspam_article; @mapspam_data].  
+
+- **Africa-Specific SPAM (AAAA)**:  
+  - Higher-resolution data for subnational crop production and harvested area across Africa, commissioned by the Africa Agricultural Adaptation Atlas.  
+
+- **Integration**:  
+  - Africa-specific SPAM data replaced corresponding IFPRI SPAM values to improve regional accuracy.  
+  - Final combined dataset included high-resolution exposure for Africa and global data coverage elsewhere.  
+
+#### Outputs
+
+The resulting outputs include:  
+- Combined hazard maps for rainfed and irrigated systems.  
+- Tabulated hazard x exposure data aggregated by region, country, and crop.
+
+<div style="text-align: center; margin-top: 30px;">
+  <img src="logos/abc.png" alt="Logo 1" height="100" style="margin: 10px;">
+  <img src="logos/eia.png" alt="Logo 2" height="100" style="margin: 10px;">
+  <img src="logos/cgiar.jpeg" alt="Logo 3" height="100" style="margin: 10px;">
+</div>
+
+### Datasets
+
+```{r display-dataset-table, echo=FALSE}
+# Load dataset descriptor from CSV
+dataset_info <- data.table::fread("Data/data_descriptor.csv", showProgress = FALSE)
+
+# Render the dataset table
+datatable(
+  dataset_info,
+  caption = "Table: Overview of datasets used in the analysis, including details on variables, timeframes, and formats.",
+  extensions = 'Buttons',
+  options = list(
+    dom = 'Blfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength = 10
+  )
+)
+```
+
+<div style="text-align: center; margin-top: 30px;">
+  <img src="logos/abc.png" alt="Logo 1" height="100" style="margin: 10px;">
+  <img src="logos/eia.png" alt="Logo 2" height="100" style="margin: 10px;">
+  <img src="logos/cgiar.jpeg" alt="Logo 3" height="100" style="margin: 10px;">
+</div>
+
+### References
