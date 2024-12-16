@@ -1,41 +1,46 @@
 ---
 title: "CGIAR EiA Climate Adaptation Prioritization Tool"
 author: "Peter Steward, Harold Achicanoy, Todd Rosenstock, Brayden Youngberg, and Petra Schimitter"
-output: html_document
+format:
+  html:
+    embed-resources: true
 bibliography: references/refs.bib
-runtime: shiny
+execute:
+  echo: true
 ---
-<style type="text/css">
-.main-container {
-max-width: 1800px;
-margin-left: auto;
-margin-right: auto;
-}
+
+```{=html}
+<style>
+  .main-container {
+    max-width: 1800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 </style>
+```
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 999)
 ```
 
 ```{r Load packages,echo=F,message=F,warning=F}
 
-if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
+# if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
 
-required.packages <- c("arrow",
-                       "colourpicker",
-                       "data.table",
-                       "DT",
-                       "dplyr",
-                       "ggplot2",
-                       "ggpubr",
-                       "MetBrewer",
-                       "reshape",
-                       "shiny",
-                       "viridis",
-                       "wesanderson")
+library(arrow)
+library(colourpicker)
+library(data.table)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(MetBrewer)
+library(reshape)
+library(shiny)
+library(viridis)
+library(wesanderson)
 
-pacman::p_load(char=required.packages,install = T,character.only = T)
+# pacman::p_load(char=required.packages,install = T,character.only = T)
 
 if(require("waffle")==F){
   devtools::install_github("hrbrmstr/waffle")
@@ -736,7 +741,7 @@ Waffler<-function(data,
   gg_theme+
   scale_y_continuous(expand = c(0.003,0.01))+
   coord_flip()
-  plot(g3)
+  # plot(g3)
   
   # Plot 2
   gg_theme <- theme(
