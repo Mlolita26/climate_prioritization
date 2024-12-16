@@ -4,11 +4,15 @@ author: "Peter Steward, Harold Achicanoy, Todd Rosenstock, Brayden Youngberg, an
 format:
   html:
     embed-resources: true
+    page-layout: full
+    grid:
+      body-width: 1800px
 bibliography: references/refs.bib
 execute:
   echo: true
+server: shiny
 ---
-
+<!-- 
 ```{=html}
 <style>
   .main-container {
@@ -17,85 +21,9 @@ execute:
     margin-right: auto;
   }
 </style>
-```
+``` -->
+::: {.panel-tabset .tabset-fade .tabset-pills}
 
-```{r setup, include=FALSE}
-options(scipen = 999)
-```
-
-```{r Load packages,echo=F,message=F,warning=F}
-
-# if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
-
-library(arrow)
-library(colourpicker)
-library(data.table)
-library(DT)
-library(dplyr)
-library(ggplot2)
-library(ggpubr)
-library(MetBrewer)
-library(reshape)
-library(shiny)
-library(viridis)
-library(wesanderson)
-
-# pacman::p_load(char=required.packages,install = T,character.only = T)
-
-if(require("waffle")==F){
-  devtools::install_github("hrbrmstr/waffle")
-  require("waffle")
-}
- 
-```
-
-```{r Palette,echo=F}
-Viridis<-data.table(Source="viridis",Palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"))
-Met<-data.table(Source="MetBrewer",Palette=names(MetBrewer::MetPalettes))
-Wes<-data.table(Source="wesanderson",Palette=names(wesanderson::wes_palettes))
-
-Palettes<-rbind(Viridis,Met)
-
-PalFun<-function(PalName,N,Names) {
-Viridis<-data.table(Source="viridis",Palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"))
-Met<-data.table(Source="MetBrewer",Palette=names(MetBrewer::MetPalettes))
-Palettes<-rbind(Viridis,Met)
-    
- if(Palettes[Palette==PalName,Source]=="viridis"){
-    PAL<-viridis::viridis(N,option=PalName)
- }
-
-if(Palettes[Palette==PalName,Source]=="MetBrewer"){
-     PAL<-MetBrewer::met.brewer(name=PalName, n=N, type="continuous")
-}
-
-  if(Palettes[Palette==PalName,Source]=="Wes"){
-     PAL<-wesanderson::wes_palette(name=PalName, n=N, type="continuous")
-  }
-names(PAL)<-Names
-
-return(PAL)
-}
-```
-
-## {.tabset .tabset-fade .tabset-pills}
-
-```{r load mapspam, echo =F}
-haz_ex_file<-"Data/hazard_ex_admin.parquet"
-
-Data<-data.table(arrow::read_parquet(haz_ex_file))
-
-# default variable selection
-var_choice<-"vop"
-```
-
-```{r Create Plot Save Location,echo=F}
-PlotDir<-"Plots"
-if(!dir.exists(PlotDir)){
-  dir.create(PlotDir)
-}
-
-```
 ### Introduction
 
 This interactive Markdown document is designed to support the prioritization of climate adaptation investments at the regional level for CGIAR science programs. It accompanies a publication and provides an interactive interface for exploring the intersection of climate hazards and agricultural exposure. The primary goal is to aid decision-makers in identifying and prioritizing regions and crops most vulnerable to climate risks.
@@ -139,34 +67,110 @@ For questions or further information, please contact:
 </div>
 
 ### Hazard Exposure Visualization
-:::: {style="display: flex;"}
-::: {}
-```{r Choose variable,echo=F}
-  selectInput(inputId="var_choice",
-               label="Choose spam variable",
-               choices=Data[,unique(variable)],
-               selected=var_choice, 
-               multiple = F, 
-               width="150px")
+```{r setup, include=FALSE}
+options(scipen = 999)
 ```
-:::
-:::{}
-```{r choose region, echo=F}
- cg_regions<- Data[,sort(unique(Region))]
- Regions<-cg_regions[cg_regions %in% c("Africa","LAC","SA","SEA")]
 
-  checkboxGroupInput(inputId="Regions", 
-                     label="Select regions",
-                     choices = cg_regions,
-                     selected = Regions,
-                     inline=T)
+```{r Load packages,echo=F,message=F,warning=F}
+#| context: setup
+library(nanoparquet)
+library(DT)
+library(colourpicker)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(MetBrewer)
+library(reshape)
+library(shiny)
+library(viridis)
+library(wesanderson)
+
+if(!require("waffle")){
+  devtools::install_github("hrbrmstr/waffle")
+  require("waffle")
+}
+ 
 ```
-:::
-::::
+
+```{r Palette,echo=F}
+#| context: setup
+
+Viridis<-data.table(Source="viridis",Palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"))
+Met<-data.table(Source="MetBrewer",Palette=names(MetBrewer::MetPalettes))
+Wes<-data.table(Source="wesanderson",Palette=names(wesanderson::wes_palettes))
+
+Palettes<-rbind(Viridis,Met)
+
+PalFun<-function(PalName,N,Names) {
+Viridis<-data.table(Source="viridis",Palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"))
+Met<-data.table(Source="MetBrewer",Palette=names(MetBrewer::MetPalettes))
+Palettes<-rbind(Viridis,Met)
+    
+ if(Palettes[Palette==PalName,Source]=="viridis"){
+    PAL<-viridis::viridis(N,option=PalName)
+ }
+
+if(Palettes[Palette==PalName,Source]=="MetBrewer"){
+     PAL<-MetBrewer::met.brewer(name=PalName, n=N, type="continuous")
+}
+
+  if(Palettes[Palette==PalName,Source]=="Wes"){
+     PAL<-wesanderson::wes_palette(name=PalName, n=N, type="continuous")
+  }
+names(PAL)<-Names
+
+return(PAL)
+}
+```
+
+```{r load mapspam, echo =F}
+#| context: setup
+haz_ex_file<-"Data/hazard_ex_admin.parquet"
+
+Data<-data.table(nanoparquet::read_parquet(haz_ex_file))
+# default variable selection
+var_choice<-"vop"
+```
+
+```{r Create Plot Save Location,echo=F}
+PlotDir<-"Plots"
+if(!dir.exists(PlotDir)){
+  dir.create(PlotDir)
+}
+
+```
+
+
+```{r Choose variable,echo=F}
+cg_regions <- Data[, sort(unique(Region))]
+Regions <- cg_regions[cg_regions %in% c("Africa", "LAC", "SA", "SEA")]
+
+tags$div(style = "display: flex;",
+      selectInput(
+        inputId = "var_choice",
+        label = "Choose spam variable",
+        choices = Data[, unique(variable)],
+        selected = var_choice,
+        multiple = FALSE,
+        width = "150px"
+      ),
+      checkboxGroupInput(
+          inputId = "Regions",
+          label = "Select regions",
+          choices = cg_regions,
+          selected = Regions,
+          inline = TRUE
+      )
+    )
+
+```
+
 
 ```{r choose country, echo=F}
+#| context: server
 # Dynamically filter countries based on selected regions
-renderUI({
+output$Countries <- renderUI({
   req(input$Regions) # Ensure regions are selected
 
   checkboxGroupInput(inputId="Countries", 
@@ -177,7 +181,13 @@ renderUI({
 })
 ```
 
-Select the number of crops for each region to show, the top n 
+```{r, echo=F}
+uiOutput("Countries")
+```
+
+
+**Select the number of crops for each region to show, the top n**
+
 
 ```{r set default parameter values,echo=F}
 Scaler<-200
@@ -207,54 +217,51 @@ Crop.N3<-Data[,length(unique(Crop))]
 n_haz<-10
 ```
 
-:::: {style="display: flex;"}
-::: {}
-```{r Choose N Crops, echo=F}
-numericInput(inputId="Crop.N1",
-             label="No. of crops to show (plot1)",
-             value=Crop.N1,
-             min=1,
-             max=Data[,length(unique(Crop))],
-             step=1,
-             width="300px")
+```{r, echo=F}
+tags$div(
+  style = "display: flex;",
+      numericInput(
+        inputId = "Crop.N1",
+        label = "No. of crops to show (plot1)",
+        value = Crop.N1,
+        min = 1,
+        max = Data[, length(unique(Crop))],
+        step = 1,
+        width = "300px"
+      ),
+      numericInput(
+        inputId = "Crop.N2",
+        label = "No. of rows to show (plot2)",
+        value = Crop.N2,
+        min = 1,
+        max = 50,
+        step = 1,
+        width = "300px"
+      ),
+      numericInput(
+        inputId = "Crop.N3",
+        label = "No. of crops to show (plot3)",
+        value = Crop.N3,
+        min = 1,
+        max = Data[, length(unique(Crop))],
+        step = 1,
+        width = "300px"
+      ),
+      numericInput(
+        inputId = "Haz.N",
+        label = "No. of hazards to show",
+        value = n_haz,
+        min = 1,
+        max = Data[, length(unique(Hazard))],
+        step = 1,
+        width = "300px"
+    )
+  )
+
 ```
-:::
-:::{}
-```{r Choose N Crops 2, echo=F}
-numericInput(inputId="Crop.N2",
-             label="No. of rows to show (plot2)",
-             value=Crop.N2,
-             min=1,
-             max=50,
-             step=1,
-             width="300px")
-```
-:::
-:::{}
-```{r Choose N Crops 3, echo=F}
-numericInput(inputId="Crop.N3",
-             label="No. of crops to show (plot3)",
-             value=Crop.N3,
-             min=1,
-             max=Data[,length(unique(Crop))],
-             step=1,
-             width="300px")
-```
-:::
-:::{}
-```{r Choose N Hazards, echo=F}
-numericInput(inputId="Haz.N",
-             label="No. of hazards to show",
-             value=n_haz,
-             min=1,
-             max=Data[,length(unique(Hazard))],
-             step=1,
-             width="300px")
-```
-:::
-::::
 
 ```{r choose crops 2,echo=F}
+#| context: server
 crop_options<-reactive({
   if(is.null(input$Countries)){
     Data[Region %in% input$Regions & (is.na(Country)|Country==""),sort(unique(Crop))]
@@ -263,7 +270,7 @@ crop_options<-reactive({
   }
 })
 
-renderUI({
+output$crops <- renderUI({
   checkboxGroupInput(inputId="crops", 
                      label="Choose Crops",
                      choices = crop_options(),
@@ -273,249 +280,178 @@ renderUI({
 
 ```
 
+```{r, echo=F}
+uiOutput("crops")
+```
 
-:::: {style="display: flex;"}
-::: {}
+
 ```{r Scaling factor, echo=F}
+tags$div(
+  style = "display: flex;",
 numericInput(inputId="Scaler",
              label="Max blocks",
              value=Scaler,
              min=0,
              max=2000,
              step=50,
-             width="100px")
-```
-:::
-:::{}
-```{r Number of Rows, echo=F}
+             width="100px"),
 numericInput(inputId="NRows",
              label="Waffle cols-plot1",
              value=NRows,
              min=1,
              max=30,
              step=1,
-             width="120px")
-```
-:::
-:::{}
-```{r Number of Rows2, echo=F}
+             width="120px"),
 numericInput(inputId="NRows2",
              label="Waffle cols-plot2",
              value=NRows2,
              min=1,
              max=30,
              step=1,
-             width="120px")
-```
-:::
-:::{}
-```{r Number of Facet Rows, echo=F}
+             width="120px"),
 numericInput(inputId="FacetRows",
              label="No. facet rows",
              value=FacetRows,
              min=1,
              max=30,
              step=1,
-             width="120px")
-```
-:::
-:::{}
-```{r Text Size, echo=F}
+             width="120px"),
 numericInput(inputId="TextSize",
              label="Text Size",
              value=20,
              min=1,
              max=30,
              step=1,
-             width="80px")
-```
-:::
-:::{}
-```{r Text Wrap, echo=F}
+             width="80px"),
   selectInput(inputId="TextWrap", 
              label="Wrap labels?",
               choices = c("Yes","No"),
               selected=TextWrap, 
               multiple = F, 
-              width="100px")
-```
-:::
-:::{}
-```{r RmNoHaz, echo=F}
+              width="100px"),
   selectInput(inputId="RmNoHaz", 
              label="Remove No Hazard?",
               choices = c("Yes","No"),
               selected=RmNoHaz, 
               multiple = F, 
-              width="140px")
-```
-:::
-:::{}
-```{r LegPos,echo=F}
+              width="140px"),
   selectInput(inputId="LegPos", 
               label="Legend position",
               choices = c("bottom", "right", "top", "left"),
               selected=LegPos, 
               multiple = F, 
-              width="120px")
-```
-:::
-:::{}
-```{r Facet spacing, echo=F}
+              width="120px"),
 numericInput(inputId="PanelSpace",
              label="Facet spacing",
              value=PanelSpace,
              min=1,
              max=30,
              step=1,
-             width="110px")
-```
-:::
-:::{}
-```{r Grid spacing, echo=F}
+             width="110px"),
 numericInput(inputId="GridSpace",
              label="Grid spacing",
              value=GridSpace,
              min=0,
              max=3,
              step=0.01,
-             width="110px")
-```
-:::
-:::{}
-```{r Grid Cols, echo=F}
+             width="110px"),
 numericInput(inputId="GridCols",
              label="Grid columns",
              value=GridCols,
              min=1,
              max=10,
              step=1,
-             width="100px")
-```
-:::
-:::{}
-```{r Grid Rows, echo=F}
-
+             width="100px"),
   numericInput(inputId="GridRows",
                label="Grid rows",
                value=GridRows,
                min=1,
                max=10,
                step=1,
-               width="100px")
-
-```
-:::
-:::{}
-```{r Plot 3 free, echo=F}
+               width="100px"),
   selectInput(inputId="p3_free",
                label="P3 free y?",
                choices=c("free","fixed"),
                selected=p3_free, 
                multiple = F, 
-               width="100px")
-```
-:::
-:::{}
-```{r Plot 3 order, echo=F}
+               width="100px"),
   selectInput(inputId="p3_order_val",
                label="P3 order val?",
                choices=c("Yes","No"),
                selected=p3_order_val, 
                multiple = F, 
                width="100px")
-
+)
 ```
-:::
-::::
 
-:::: {style="display: flex;"}
-::: {}
 ```{r Choose Plot,echo=F}
+tags$div(
+  style = "display: flex;",
   selectInput(inputId="plot_choice", 
               label="Choose plot",
               choices = c("plot1","plot2","plot3"),
               selected="plot3", 
               multiple = F, 
-              width="120px")
-```
-:::
-:::{}
-```{r Choose Palette,echo=F}
+              width="120px"),
   selectInput(inputId="Palette", 
               label="Palette",
               choices = Palettes[,sort(Palette)],
               selected=Palette, 
               multiple = F, 
-              width="150px")
-```
-:::
-:::{}
-```{r Plot background colour picker, echo =F}
+              width="150px"),
   colourInput(inputId="Background",
               label="Background colour",
-              value=Background)
-```
-:::
-:::{}
-```{r Plot grid colour picker, echo =F}
+              value=Background),
   colourInput(inputId="GridCol",
               label="Grid colour",
-              value=GridCol)
-```
-:::
-:::{}
-```{r Plot no hazard colour picker, echo =F}
+              value=GridCol),
   colourInput(inputId="NoHazardCol",
               label="No hazard colour",
               value=NoHazardCol)
+)
 ```
-:::
-::::
 
-:::: {style="display: flex;"}
-::: {}
+
 ```{r BigP - Adjust Plot Height, echo=F}
+tags$div(
+  style = "display: flex;",
 numericInput(inputId="Plot.Height",
              label="Adjust plot height",
              value=Plot.Height,
              min=0.1,
              max=3,
              step=0.05, 
-             width="200px")
-```
-:::
-:::{}
-```{r Adjust Plot Width , echo=F}
+             width="200px"),
 numericInput(inputId="Plot.Width",
              label="Adjust plot width",
              value=Plot.Width,
              min=0.1,
              max=3,
              step=0.1,
-             width="200px")
-```
-:::
-:::{}
-```{r p3 Choose Unit,echo=F}
+             width="200px"),
   selectInput(inputId="p3_unit", 
               label="P3 VoP Unit",
               choices = c("Thousand","Million","Billion"),
               selected=p3_unit, 
               multiple = F, 
               width="100px")
+)
 ```
-:::
-::::
+
 
 ```{r calculate units, echo=F}
+#| context: server
 dat<-reactive({
-    if(is.null(input$Countries)){
+  req(input$Regions)
+  req(input$var_choice)
+  req(input$crops)
+
+  if(is.null(input$Countries)){
     dat<-Data[Region %in% input$Regions & (Country==""|is.na(Country)) & Crop %in% input$crops & variable==input$var_choice]
   }else{
     dat<-Data[Country %in% input$Countries & Crop %in% input$crops & variable==input$var_choice]
   }
-  
+
   # Reduce number of hazards
   n_haz<-input$Haz.N
   haz_rank<-dat[Hazard!="none",.(value=sum(value,na.rm=T)),by=Hazard][order(value,decreasing = T)][,rank:=1:.N]
@@ -531,13 +467,14 @@ dat<-reactive({
   # Add ranks
   rank2<-unique(dat[order(value_tot_crop,decreasing = T),.(value_tot_crop,Region,Country,Crop)])[,Rank2:=1:.N]
   dat<-merge(dat,rank2,by=c("Region","Crop","Country","value_tot_crop"),all.x=T,sort=F)
-  
   rank<-unique(dat[order(Region,Country,value_tot_crop,decreasing = T),.(Region,Country,value_tot_crop,Crop)])[,Rank:=1:.N,by=.(Region,Country)]
   dat<-merge(dat,rank,by=c("Region","Crop","Country","value_tot_crop"),all.x=T,sort=F)
   dat
 })
 
 square_val<-reactive({
+  req(dat())
+
   dat1<-copy(dat())
   ranks<-dat1[,sort(unique(Rank))]
   if(length(ranks)>input$Crop.N1){
@@ -552,6 +489,7 @@ square_val<-reactive({
 })
 
 square_val2<-reactive({
+  req(dat())
   dat2<-copy(dat())
   ranks<-dat2[,sort(unique(Rank2))]
   if(length(ranks)>input$Crop.N2){
@@ -570,9 +508,29 @@ unit_x<-reactive({
 
 ```
 
-Plot 1: Waffle grid unit = `r reactive(square_val())` million `r reactive(unit_x())`. Plot 2: Waffle grid unit = `r reactive(square_val2())` million `r reactive(unit_x())`.
+
+```{r, echo=F}
+#| context: server
+
+output$unitText <- renderText({
+  req(square_val())
+  req(square_val2())
+  req(unit_x())
+  print(square_val())
+  print(square_val2())
+  print(unit_x())
+
+  paste0("Plot 1: Waffle grid unit = ", square_val()," million ",unit_x(),". Plot 2: Waffle grid unit = ",square_val2()," million ",unit_x())
+})
+
+```
+
+```{r, echo=F}
+textOutput("unitText")
+```
 
 ```{r create plot function, echo=F}
+#| context: server
 #https://rud.is/rpubs/building-waffle-charts.html 
 
 Waffler<-function(data,
@@ -815,7 +773,9 @@ Waffler<-function(data,
 ```
 
 ```{r create plots,echo=F}
+#| context: server
 PlotData<-reactive({
+  req(dat())
   Waffler(data=copy(dat()),
           Crops=input$crops,
           Crop.N1=input$Crop.N1,
@@ -845,6 +805,7 @@ PlotData<-reactive({
 ```
 
 ```{r Plot Size Adjust Functions , echo=F}
+#| context: server
 Plot.Height <- function(){
   x<-  input$Plot.Height*400*length(PlotData()$Plot1)
   if(input$plot_choice %in% c("plot2","plot3")){
@@ -859,7 +820,8 @@ Plot.Width <- function(){
 ```
 
 ```{r Plot waffles,echo=F}
-renderPlot({
+#| context: server
+output$main_plot <- renderPlot({
   if(input$plot_choice=="plot1"){
 
   plot_list<-PlotData()$Plot1
@@ -882,61 +844,49 @@ renderPlot({
   },height= Plot.Height,width=Plot.Width)
 ```
 
+```{r, echo=F}
+plotOutput("main_plot")
+```
 
-:::: {style="display: flex;"}
-::: {}
+
 ```{r  Save Waffle Option, echo=F}
+tags$div(
+  style = "display: flex;",
 selectInput(inputId="Waffle.Save.Plot", 
             label="Enable Save?",
             choices = c("Yes","No"),
             selected="No",
-            width="150px")   
-```
-:::
-:::{}
-```{r Waffle Save Width, echo=F}
+            width="150px"), 
 numericInput(inputId="Waffle.Width",
              label="Plot save width (mm)", 
              value=180,
              min=30,
              max=300,
              step=10,
-             width="200px")  
-```         
-:::
-:::{}
-```{r Waffle Save Height, echo=F}
+             width="200px"),
 numericInput(inputId="Waffle.Height",
              label="Plot save height (mm)", 
              value=180,
              min=30,
              max=300,
              step=10,
-             width="220px")  
-```   
-:::
-:::{}
-```{r Waffle Scale Height, echo=F}
+             width="220px"),
 numericInput(inputId="Waffle.Scale",
              label="Plot scaling", 
              value=1.8,
              min=0.5,
              max=4,
              step=0.1,
-             width="200px")  
-``` 
-:::
-:::{}
-```{r Waffle - Plot Filename, echo=F}
+             width="200px"),
 textInput(inputId="Waffle.Filename",
           label="Enter Waffle filename", 
           value="Waffle")
+)
 
 ```
-:::
-::::
-  
+
 ```{r Save Waffle, echo=F}
+#| context: server
 reactive({
   if(input$Waffle.Save.Plot=="Yes"){
     ggsave(filename = paste0(input$Waffle.Filename,".png"),
@@ -958,7 +908,8 @@ reactive({
 
 #### Data used in the waffle plot
 ```{r Show Data,echo=F}
-renderDT({
+#| context: server
+output$data_ref <- DT::renderDT({
   datatable(Data[,!c("Admin","Label","Rank","Rank2")][,Unit:=paste("I$ 2015")],
             caption="Crop hazard frequency x exposure data.",
             extensions = 'Buttons',
@@ -970,7 +921,9 @@ renderDT({
 })
 ```
 
-
+```{r, echo = F}
+DTOutput("data_ref")
+```
 
 <div style="text-align: center; margin-top: 30px;">
   <img src="logos/abc.png" alt="Logo 1" height="100" style="margin: 10px;">
@@ -1075,3 +1028,9 @@ datatable(
 </div>
 
 ### References
+
+::: {#refs}
+:::
+
+
+:::
