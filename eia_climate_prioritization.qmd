@@ -1016,9 +1016,21 @@ datatable(
   options = list(
     dom = 'Blfrtip',
     buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-    pageLength = 10
-  )
+    pageLength = 10,
+    scrollX = TRUE,  # Enable horizontal scrolling
+    autoWidth = FALSE,  # Prevent automatic resizing
+    columnDefs = list(
+      list(width = '150px', targets = 0),  # First column
+      list(width = '200px', targets = 1,className = "text-truncate"),  # Second column with wrapping
+      list(width = '150px', targets = 2),  # Third column
+      list(width = '150px', targets = 3),  # Fourth column
+      list(width = '150px', targets = 4),  # Fifth column
+      list(width = '150px', targets = 5)   # Sixth column
+    )
+  ),
+  class =  "nowrap stripe hover compact"
 )
+
 ```
 
 <div style="text-align: center; margin-top: 30px;">
